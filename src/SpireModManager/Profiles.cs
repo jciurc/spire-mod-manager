@@ -39,10 +39,20 @@ static class Profiles
     {
         var data = Store.Data;
         var changed = false;
+        // Better Mod Menu keeps a mod on or off by id. A mod it has on that's installed from both sources, one copy on in
+        // the list and the other off, keeps that split, so the copy set aside stays off and its current profile matches
+        // the list.
+        HashSet<(string, ModSource)>? splitOff = null;
         foreach (var profile in data.Profiles.Where(p => p.Disabled != null))
         {
+            if (splitOff == null)
+            {
+                var now = Current();
+                var onNow = now.Where(m => m.Enabled).Select(m => m.Id).ToHashSet();
+                splitOff = now.Where(m => !m.Enabled && onNow.Contains(m.Id)).Select(m => (m.Id, m.Source)).ToHashSet();
+            }
             var disabled = profile.Disabled?.Select(r => r.Id).ToHashSet() ?? [];
-            profile.Mods = Installed().Select(m => new ProfileMod(m.Id, m.Source, !disabled.Contains(m.Id))).ToList();
+            profile.Mods = Installed().Select(m => new ProfileMod(m.Id, m.Source, !disabled.Contains(m.Id) && !splitOff.Contains(m))).ToList();
             profile.Disabled = null;
             changed = true;
         }

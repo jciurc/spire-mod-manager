@@ -116,7 +116,8 @@ static partial class SelfTest
 
     // Better Mod Menu's data, as BetterModMenuImport maps it: its groups are our categories (in order, its collapsed
     // one collapsed), a mod's group its category, its aliases and notes ours (empty ones left out), its profiles ours
-    // (every installed mod on but the ones it had off), its current one active.
+    // (every installed mod on but the ones it had off; of a mod from both sources with one copy off in the list, that copy
+    // off), its current one active.
     static async Task TestImported(Node menu, NModdingScreen screen, Control content, string outDir)
     {
         var data = Store.Data;
@@ -140,7 +141,8 @@ static partial class SelfTest
             $"{names}; active {data.ActiveProfile}");
         string[] testMods = ["SmmTestLib", "SmmTestContent", "SmmTestUi"];
         bool? On(string profile, string id) => data.Profiles.FirstOrDefault(p => p.Name == profile)?.Mods.FirstOrDefault(m => m.Id == id)?.Enabled;
-        Check("in each, every installed mod on but the ones it had off", data.Profiles.All(p => p.Disabled == null)
+        Check("in each, every installed mod on but the ones it had off; the fixture mod from both sources with its Workshop copy off as in the list",
+            data.Profiles.All(p => p.Disabled == null && p.Mods.Any(m => m is { Id: "SmmTestDual", Source: ModSource.SteamWorkshop, Enabled: false }))
             && On("Framework only", "SmmTestLib") == true && On("Framework only", "SmmTestContent") == false && On("Framework only", "SmmTestUi") == false
             && On("Framework only", ModEntry.ModId) == true && testMods.All(id => On("Everything", id) == true),
             string.Join("; ", data.Profiles.Select(p => $"{p.Name}: {string.Join(", ", testMods.Select(id => $"{id} {On(p.Name, id)}"))}")));
