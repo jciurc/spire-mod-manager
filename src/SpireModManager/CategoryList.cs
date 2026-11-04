@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Godot;
 using MegaCrit.Sts2.Core.Audio;
 using MegaCrit.Sts2.Core.Commands;
@@ -459,11 +460,17 @@ static class CategoryList
         // show whole.
         if (ScrollContainer(content) is NScrollableContainer scroller)
             scroller.UpdatePadding(Ends.Top, Ends.Bottom);
-        foreach (var header in content.GetChildren().Where(c => c.IsInGroup(HeaderGroup)))
-        {
-            content.RemoveChild(header);
-            header.QueueFree();
-        }
+#if DEVTOOLS
+        TestRedraws++;
+#endif
+        // The last redraw's headers, by name: one that shows the same again is kept (Kept), the rest go. None in Vanilla
+        // View or Load Order.
+        var spare = new Dictionary<string, Control>();
+        foreach (var old in content.GetChildren().Where(c => c.IsInGroup(HeaderGroup)).OfType<Control>())
+            if (Store.Data.VanillaView || Store.Data.LoadOrderView)
+                Drop(content, old);
+            else
+                spare[old.Name] = old;
         // Better Mod Menu's group headers removed and its row controls hidden, on our views.
         var screen = ScreenOf(content);
         if (!Store.Data.VanillaView && screen != null)
@@ -552,11 +559,9 @@ static class CategoryList
 
         if (Store.Data.VanillaView)
         {
-            for (var i = 0; i < rows.Count; i++)
-            {
-                content.MoveChild(rows[i], i);
-                rows[i].Visible = true; // every row, as the game's page shows them (no search box there; with Better Mod Menu its page decides)
-            }
+            ChildOrder.Place(content, rows);
+            foreach (var row in rows)
+                row.Visible = true; // every row, as the game's page shows them (no search box there; with Better Mod Menu its page decides)
             Costs.Lap("redraw: vanilla rows moved");
             RowTitles.FitVanilla(rows);
             Costs.Lap("redraw: vanilla titles fitted");
@@ -573,124 +578,64 @@ static class CategoryList
         if (filtering)
             ListFilter.Showed(rows.Where(Matches).Select(r => r.Mod)); // the rows a change to one mod keeps
 
-        var index = 0;
+        var placed = new List<Node>(); // the list from the top: headers and rows, put in this order at the end
+        var fonts = HeaderFonts;
         var headed = false; // a category's header is shown (the divider before Uncategorized follows them)
-        void Add(Control node)
+        // A header (or the divider, the missing mods' line) kept from the last redraw if it shows the same (says), else
+        // made anew. Not one with a rename box open: closing it redraws, and the header made then shows the name.
+        Control Header(string name, string says, Func<Control> make)
         {
-            node.AddToGroup(HeaderGroup);
-            content.AddChild(node);
-            content.MoveChild(node, index++);
+            if (spare.Remove(name, out var old))
+            {
+                if (old.GetMeta(SaysMeta, "").AsString() == says && old.GetNodeOrNull(RenameBoxName) == null)
+                {
+                    placed.Add(old);
+                    return old;
+                }
+                Drop(content, old);
+            }
+            var made = make();
+            made.Name = name;
+            made.SetMeta(SaysMeta, says);
+            made.AddToGroup(HeaderGroup);
+            if (made.GetParent() != content) // (MakeHeader's is in the list already)
+                content.AddChild(made);
+            placed.Add(made);
+            return made;
         }
         // A search for #missing or #uninstalled: the profile's mods that aren't installed have no rows, so a line at the
         // list's top says how many, with a link to their list.
         if (searching && Search.Wants(filter, "missing", "uninstalled") && Profiles.Missing() is { Count: > 0 } missing)
-            Add(MissingHint(content, missing.Count));
+            Header(MissingHintName, $"{missing.Count} {Menus.Text("SPIRE_MOD_MANAGER.MISSING_SEARCH_HINT")}", () => MissingHint(content, missing.Count));
 
         void AddSection(string title, List<NModMenuRow> members, bool collapsed, Action<bool> setCollapsed, Category? category = null)
         {
             if (filtering && !members.Any(Matches))
             {
+                placed.AddRange(members);
                 foreach (var row in members)
-                {
-                    content.MoveChild(row, index++);
                     row.Visible = false;
-                }
                 return;
             }
             headed |= category != null;
-            var muted = category == null;
-            var header = ModEntry.Load<PackedScene>(HeaderScenePath)?.Instantiate<Control>() ?? PlainHeader();
-            Add(header);
-            header.Name = category == null ? "Uncategorized" : $"Category {category.Name}";
-            header.SetMeta(CategoryMeta, category?.Name ?? "");
-            var titleLabel = header.GetNode<Label>("Title");
-            // Our (smaller-text) views: a shorter header.
-            header.CustomMinimumSize = new Vector2(0, 36);
-            titleLabel.AddThemeFontSizeOverride("font_size", 18);
-            header.GetNode<Label>("Count").AddThemeFontSizeOverride("font_size", 15);
-            // The scene's Kreon, or the game's font for its language (ModEntry.Font).
-            titleLabel.AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_bold_shared.tres"));
-            header.GetNode<Label>("Count").AddThemeFontOverride("font", ModEntry.Font("res://themes/kreon_regular_shared.tres"));
-            // The bar as wide as a row's highlight, its edges in line with a highlighted row's (Jordan, 23 Oct).
-            var background = header.GetNode<ColorRect>("Background");
-            (background.OffsetLeft, background.OffsetRight) = Store.Data.VanillaView ? (0, 0) : (RowTitles.LookInset.X, RowTitles.LookInset.Z);
-            if (muted)
-            {
-                // Not a category the player made: cream instead of gold, fainter background.
-                titleLabel.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.7f));
-                background.Color = new Color(0.0756f, 0.12084f, 0.18f, 0.3f);
-            }
-            // The count right after the name, as it shows: a long one is cut short of the header's buttons.
-            var count = header.GetNode<Label>("Count");
-            count.Text = Menus.Number(filtering ? members.Count(Matches) : members.Count);
-            count.HorizontalAlignment = HorizontalAlignment.Left;
-            count.AnchorLeft = 0;
-            Menus.CutToFit(titleLabel, title, () => count.OffsetLeft = titleLabel.OffsetLeft
-                + titleLabel.GetThemeFont("font").GetStringSize(titleLabel.Text, fontSize: 18).X + 10);
-            // The header menu's actions inline, right-aligned: the category's own (not for Uncategorized), then
-            // Enable all / Disable all at the far right, over the rows' tickboxes.
+            // The header menu's actions inline: the category's own (not for Uncategorized), then Enable all / Disable all
+            // for the rows it shows. Kept when its title, count, fold and buttons are the same, its buttons given this
+            // redraw's actions and its handlers this redraw's section.
             var shown = members.Where(Matches).ToList();
-            var actions = Menus.InlineButtons(category == null ? [] : HeaderActions(content, category, compact: true), "Actions");
-            actions.AddThemeConstantOverride("separation", 4);
-            if (category != null)
-                actions.AddChild(new Control { CustomMinimumSize = new Vector2(10, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
-            foreach (var item in OnOffItems(content, shown))
-            {
-                var button = Menus.SmallButton(item.Label, item.OnSelect ?? (() => { }), item.Disabled);
-                button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
-                Hover.Tip(button, item.Tip, markup: item.TipMarkup); // Disable all where this mod is among them: it stays on
-                actions.AddChild(button);
-            }
-            actions.Alignment = BoxContainer.AlignmentMode.End;
-            header.AddChild(actions);
-            actions.AnchorLeft = actions.AnchorRight = 1;
-            actions.AnchorBottom = 1;
-            actions.GrowHorizontal = Control.GrowDirection.Begin;
-            (actions.OffsetLeft, actions.OffsetRight, actions.OffsetTop, actions.OffsetBottom) = (-16, -16, 5, -5);
-            // Measured once per set of labels in the buttons' font (it changes with the game's language): shaping text is slow.
-            var widthKey = $"{ModEntry.Font("res://themes/kreon_regular_shared.tres").GetInstanceId()}\n"
-                + string.Join("\n", actions.GetChildren().Select(c => c is Button b ? b.Text : "|"));
-            if (!HeaderWidths.TryGetValue(widthKey, out var actionsWidth))
-                HeaderWidths[widthKey] = actionsWidth = actions.GetCombinedMinimumSize().X;
-            titleLabel.OffsetRight = -16 - actionsWidth - 30;
-            Costs.Lap("redraw: headers made");
+            var open = searching || !collapsed;
+            var count = Menus.Number(filtering ? shown.Count : members.Count);
+            List<MenuItem> own = category == null ? [] : HeaderActions(content, category, compact: true), onOff = OnOffItems(content, shown);
+            var says = string.Join("\n", [title, count, $"{open}", $"{fonts.Bold.GetInstanceId()} {fonts.Regular.GetInstanceId()}", .. own.Concat(onOff).Select(i => i.Shows())]);
+            var header = Header(category == null ? "Uncategorized" : $"Category {category.Name}", says,
+                () => MakeHeader(content, title, count, open, category, own, onOff));
+            Menus.Rebind(header.GetNode<HBoxContainer>("Actions"), own.Concat(onOff));
+            var section = Sections.GetValue(header, _ => new Section());
+            (section.Category, section.Members, section.Collapsed, section.SetCollapsed, section.Matches, section.Searching)
+                = (category, members, collapsed, setCollapsed, Matches, searching);
+            placed.AddRange(members);
             foreach (var row in members)
-                content.MoveChild(row, index++);
-            Costs.Lap("redraw: rows moved");
-
-            void Show(bool isCollapsed)
-            {
-                var open = searching || !isCollapsed;
-                header.GetNode<Control>("Arrow").RotationDegrees = open ? 90 : 0;
-                foreach (var row in members)
-                    row.Visible = open && Matches(row);
-            }
-            Show(collapsed);
-
-            var baseColor = background.Color;
-            header.MouseEntered += () => background.Color = baseColor.Lightened(0.15f);
-            header.MouseExited += () => background.Color = baseColor;
-
-            var pressedAt = Vector2.Zero;
-            header.GuiInput += e =>
-            {
-                if (e is InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false })
-                    ShowHeaderMenu(content, category, members.Where(Matches).ToList());
-                if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left } click)
-                    return;
-                if (click.Pressed)
-                    pressedAt = click.GlobalPosition;
-                // Not while searching: every section shows open then (Show), so a fold would change out of sight.
-                else if (click.GlobalPosition.DistanceTo(pressedAt) < DragThreshold && !searching)
-                {
-                    setCollapsed(!collapsed);
-                    Store.SaveViewState(); // view state: no undo step
-                    Apply(content); // the page bar's Expand all and Collapse all follow
-                    // The header made again under a still mouse is lit, as the one clicked was.
-                    Callable.From(() => content.GetViewport()?.UpdateMouseCursorState()).CallDeferred();
-                }
-            };
-            Costs.Lap("redraw: rows shown, header hooked up");
+                row.Visible = open && Matches(row);
+            Costs.Lap("redraw: headers made or kept, rows shown");
         }
 
         // Each category's rows by the name they show (an alias, else the mod's name), as the game's language sorts
@@ -703,13 +648,126 @@ static class CategoryList
                 category.Collapsed, c => category.Collapsed = c, category);
 
         var uncategorized = byCategory[null].ToList();
-        if (uncategorized.Count == 0)
-            return;
-        // Not while searching; under a Show: choice, between categories it shows and Uncategorized if that shows.
-        if (headed && !searching && (!filtering || uncategorized.Any(Matches)))
-            Add(Divider());
-        AddSection(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), uncategorized,
-            Store.Data.UncategorizedCollapsed, c => Store.Data.UncategorizedCollapsed = c);
+        if (uncategorized.Count > 0)
+        {
+            // Not while searching; under a Show: choice, between categories it shows and Uncategorized if that shows.
+            if (headed && !searching && (!filtering || uncategorized.Any(Matches)))
+                Header(DividerName, "", Divider);
+            AddSection(Menus.Text("SPIRE_MOD_MANAGER.UNCATEGORIZED"), uncategorized,
+                Store.Data.UncategorizedCollapsed, c => Store.Data.UncategorizedCollapsed = c);
+        }
+        foreach (var old in spare.Values)
+            Drop(content, old);
+        ChildOrder.Place(content, placed);
+        Costs.Lap("redraw: headers and rows put in order");
+    }
+
+    const string SaysMeta = "spire_mod_manager_says", RenameBoxName = "RenameBox", DividerName = "SpireModManagerDivider";
+
+#if DEVTOOLS
+    // Self-test: how many times the whole list was drawn again (Apply).
+    public static int TestRedraws { get; private set; }
+
+#endif
+    // Out of the list now (a header made in its place this redraw takes its name), freed at the frame's end.
+    static void Drop(Control content, Control node)
+    {
+        content.RemoveChild(node);
+        node.QueueFree();
+    }
+
+    // A header's section as the latest redraw has it, which its handlers act on: a header kept from an earlier redraw
+    // folds, opens and lists the rows this one gave it.
+    sealed class Section
+    {
+        public Category? Category;
+        public List<NModMenuRow> Members = [];
+        public bool Collapsed, Searching;
+        public Action<bool> SetCollapsed = _ => { };
+        public Func<NModMenuRow, bool> Matches = _ => true;
+    }
+
+    static readonly ConditionalWeakTable<Control, Section> Sections = new();
+
+    static (Font Bold, Font Regular) HeaderFonts =>
+        (ModEntry.Font("res://themes/kreon_bold_shared.tres"), ModEntry.Font("res://themes/kreon_regular_shared.tres"));
+
+    // A category's header (Uncategorized's: muted): its name and count, its fold arrow, and its actions as buttons at
+    // the right, over the rows' tickboxes. A click folds or opens it; a right-click opens its menu (its Section's).
+    static Control MakeHeader(Control content, string title, string count, bool open, Category? category, List<MenuItem> own, List<MenuItem> onOff)
+    {
+        var header = ModEntry.Load<PackedScene>(HeaderScenePath)?.Instantiate<Control>() ?? PlainHeader();
+        content.AddChild(header); // in the list (and the page's theme, the language's font) before its buttons are measured
+        header.SetMeta(CategoryMeta, category?.Name ?? "");
+        var titleLabel = header.GetNode<Label>("Title");
+        var countLabel = header.GetNode<Label>("Count");
+        // Our (smaller-text) views: a shorter header.
+        header.CustomMinimumSize = new Vector2(0, 36);
+        titleLabel.AddThemeFontSizeOverride("font_size", 18);
+        countLabel.AddThemeFontSizeOverride("font_size", 15);
+        // The scene's Kreon, or the game's font for its language (ModEntry.Font).
+        var fonts = HeaderFonts;
+        titleLabel.AddThemeFontOverride("font", fonts.Bold);
+        countLabel.AddThemeFontOverride("font", fonts.Regular);
+        // The bar as wide as a row's highlight, its edges in line with a highlighted row's (Jordan, 23 Oct).
+        var background = header.GetNode<ColorRect>("Background");
+        (background.OffsetLeft, background.OffsetRight) = (RowTitles.LookInset.X, RowTitles.LookInset.Z);
+        if (category == null)
+        {
+            // Not a category the player made: cream instead of gold, fainter background.
+            titleLabel.AddThemeColorOverride("font_color", new Color(1, 0.964706f, 0.886275f, 0.7f));
+            background.Color = new Color(0.0756f, 0.12084f, 0.18f, 0.3f);
+        }
+        header.GetNode<Control>("Arrow").RotationDegrees = open ? 90 : 0;
+        // The count right after the name, as it shows: a long one is cut short of the header's buttons.
+        countLabel.Text = count;
+        countLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        countLabel.AnchorLeft = 0;
+        Menus.CutToFit(titleLabel, title, () => countLabel.OffsetLeft = titleLabel.OffsetLeft
+            + titleLabel.GetThemeFont("font").GetStringSize(titleLabel.Text, fontSize: 18).X + 10);
+        // Right-aligned: the category's own actions, a gap, then Enable all / Disable all at the far right (its tip:
+        // Disable all where this mod is among them leaves it on).
+        var actions = Menus.InlineButtons(own, "Actions");
+        if (category != null)
+            actions.AddChild(new Control { CustomMinimumSize = new Vector2(10, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
+        foreach (var item in onOff)
+            actions.AddChild(Menus.InlineButton(item));
+        actions.Alignment = BoxContainer.AlignmentMode.End;
+        header.AddChild(actions);
+        actions.AnchorLeft = actions.AnchorRight = 1;
+        actions.AnchorBottom = 1;
+        actions.GrowHorizontal = Control.GrowDirection.Begin;
+        (actions.OffsetLeft, actions.OffsetRight, actions.OffsetTop, actions.OffsetBottom) = (-16, -16, 5, -5);
+        // Measured once per set of labels in the buttons' font (it changes with the game's language): shaping text is slow.
+        var widthKey = $"{fonts.Regular.GetInstanceId()}\n" + string.Join("\n", actions.GetChildren().Select(c => c is Button b ? b.Text : "|"));
+        if (!HeaderWidths.TryGetValue(widthKey, out var actionsWidth))
+            HeaderWidths[widthKey] = actionsWidth = actions.GetCombinedMinimumSize().X;
+        titleLabel.OffsetRight = -16 - actionsWidth - 30;
+
+        var section = Sections.GetValue(header, _ => new Section());
+        var baseColor = background.Color;
+        header.MouseEntered += () => background.Color = baseColor.Lightened(0.15f);
+        header.MouseExited += () => background.Color = baseColor;
+        var pressedAt = Vector2.Zero;
+        header.GuiInput += e =>
+        {
+            if (e is InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false })
+                ShowHeaderMenu(content, section.Category, section.Members.Where(section.Matches).ToList());
+            if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left } click)
+                return;
+            if (click.Pressed)
+                pressedAt = click.GlobalPosition;
+            // Not while searching: every section shows open then, so a fold would change out of sight.
+            else if (click.GlobalPosition.DistanceTo(pressedAt) < DragThreshold && !section.Searching)
+            {
+                section.SetCollapsed(!section.Collapsed);
+                Store.SaveViewState(); // view state: no undo step
+                Apply(content); // the page bar's Expand all and Collapse all follow
+                // The header made again under a still mouse is lit, as the one clicked was.
+                Callable.From(() => content.GetViewport()?.UpdateMouseCursorState()).CallDeferred();
+            }
+        };
+        return header;
     }
 
     // The small buttons at the right of each row's strip: moves in Load Order; otherwise its category, opening
@@ -1039,7 +1097,7 @@ static class CategoryList
             is not { } header)
             return null;
         var title = header.GetNode<Label>("Title");
-        var edit = new LineEdit { Name = "RenameBox", Text = category.Name, Flat = true, SelectAllOnFocus = true, MaxLength = 40, ClearButtonEnabled = true };
+        var edit = new LineEdit { Name = RenameBoxName, Text = category.Name, Flat = true, SelectAllOnFocus = true, MaxLength = 40, ClearButtonEnabled = true };
         edit.AddThemeFontOverride("font", title.GetThemeFont("font"));
         edit.AddThemeFontSizeOverride("font_size", title.GetThemeFontSize("font_size"));
         edit.AddThemeColorOverride("font_color", title.GetThemeColor("font_color"));

@@ -1674,6 +1674,78 @@ static partial class SelfTest
             Layout.TestMeasured == measured && Layout.Current == Layout.View.Categories, $"{Layout.TestMeasured - measured} measured, now {Layout.Current}");
     }
 
+    // A redraw keeps each header that shows the same (its title, count, fold and buttons) and moves only the rows out
+    // of place; a kept header acts on the rows this redraw gave it, not the ones it was made with. Two mods (one in a
+    // category, one uncategorized, both on or both off) swap places: every count stays, so every header is kept.
+    static async Task TestHeaderReuse(Node menu, NModdingScreen screen, Control content)
+    {
+        List<NModMenuRow> Rows() => [.. content.GetChildren().OfType<NModMenuRow>()];
+        bool Single(NModMenuRow r) => r.Mod?.manifest?.id is { } id && id != ModEntry.ModId && Rows().Count(o => o.Mod?.manifest?.id == id) == 1;
+        string? CategoryOf(NModMenuRow r) => Store.InfoFor(r.Mod)?.Category is { } name && Store.Data.Categories.Any(c => c.Name == name) ? name : null;
+        if (Layout.Current != Layout.View.Categories
+            || Rows().FirstOrDefault(r => Single(r) && CategoryOf(r) != null) is not { Mod: { } leftMod } left
+            || CategoryOf(left) is not { } category
+            || Rows().FirstOrDefault(r => Single(r) && CategoryOf(r) == null && r.Mod is { } mod && Copies.Ticked(mod) == Copies.Ticked(leftMod)) is not { Mod: { } cameMod } came)
+        {
+            Results.Add("SKIP header reuse: no categorized and uncategorized mod alike to swap");
+            return;
+        }
+        var cameFrom = Store.InfoFor(cameMod)?.Category; // a category since deleted, maybe
+        var folds = (Store.Data.Categories.Select(c => c.Collapsed).ToList(), Store.Data.UncategorizedCollapsed);
+        Store.Data.Categories.ForEach(c => c.Collapsed = false);
+        Store.Data.UncategorizedCollapsed = false;
+        try
+        {
+            CategoryList.Apply(content);
+            var (headers, moved) = (Headers(content), ChildOrder.TestMoved);
+            CategoryList.Apply(content);
+            Check("a redraw that changes nothing keeps every header and moves no row",
+                Headers(content).SequenceEqual(headers) && ChildOrder.TestMoved == moved,
+                $"headers kept {Headers(content).SequenceEqual(headers)}, {ChildOrder.TestMoved - moved} moved");
+
+            Store.EditMod(Copies.Key(leftMod), i => i.Category = null);
+            Store.EditMod(Copies.Key(cameMod), i => i.Category = category);
+            CategoryList.Apply(content);
+            Check("two mods swapping categories: every header kept (its count the same), only their two rows moved",
+                Headers(content).SequenceEqual(headers) && ChildOrder.TestMoved - moved <= 2
+                && Rows().IndexOf(came) < Rows().IndexOf(left),
+                $"headers kept {Headers(content).SequenceEqual(headers)}, {ChildOrder.TestMoved - moved} moved");
+
+            // The kept header's right-click menu: Select all picks the rows it has now.
+            var header = content.GetNode<Control>($"Category {category}");
+            header.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = false });
+            await Wait(menu, 0.2);
+            var pressed = MenuPanel.Current is { } headerMenu && MenuPanel.Press(headerMenu, "Select all");
+            await Wait(menu, 0.2);
+            Check("a kept header's menu acts on its rows now (Select all picks the mod that came, not the one that left)",
+                pressed && Selection.Contains(came.Mod) && !Selection.Contains(left.Mod),
+                $"pressed {pressed}, came {Selection.Contains(came.Mod)}, left {Selection.Contains(left.Mod)}");
+            MenuPanel.Close();
+            Selection.Clear(content, record: false);
+
+            // Its click folds the category with the rows it has now: the mod that came hides, the one that left stays.
+            foreach (var down in new[] { true, false })
+                header.EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = down });
+            await Wait(menu, 0.2);
+            var folded = Store.Data.Categories.FirstOrDefault(c => c.Name == category)?.Collapsed == true;
+            Check("a kept header's click folds its category now: the mod that came hidden, the one that left still shown",
+                folded && !came.Visible && left.Visible, $"folded {folded}, came shown {came.Visible}, left shown {left.Visible}");
+        }
+        finally
+        {
+            MenuPanel.Close();
+            Selection.Clear(content, record: false);
+            Store.EditMod(Copies.Key(cameMod), i => i.Category = cameFrom);
+            Store.EditMod(Copies.Key(leftMod), i => i.Category = category);
+            foreach (var (c, collapsed) in Store.Data.Categories.Zip(folds.Item1))
+                c.Collapsed = collapsed;
+            Store.Data.UncategorizedCollapsed = folds.Item2;
+            Store.SaveViewState();
+            CategoryList.Apply(content);
+        }
+        await Wait(menu, 0.3);
+    }
+
     // A redraw answers its questions once (Lookups) instead of once per row: the answers must be the same as asked
     // one at a time outside a redraw, for every mod shown. Then how long a redraw and a search keystroke take here
     // (about 50 mods): reported, with a generous bound. TestManyMods and the --real tour time longer lists.
@@ -1885,13 +1957,14 @@ static partial class SelfTest
             box.Text = "";
             await FrameMs(menu, () => box.EmitSignal(Control.SignalName.FocusExited));
             bool Marked() => row.GetNodeOrNull<Control>("SpireModManagerEditedMark") is { Visible: true };
-            var (headers, unmarked) = (Headers(content), !Marked());
+            var (headers, unmarked, redraws) = (Headers(content), !Marked(), CategoryList.TestRedraws);
             var saves = await NoteSaves(menu, screen, "Timed note");
             var saved = Store.InfoFor("SmmTestFixes")?.Notes;
-            // Its row alone drawn again: the categories' headers (made anew by a whole redraw) kept, its notepad shown.
-            Check("a note saved: only its row drawn again (the headers kept, its notepad shown)",
-                Headers(content).SequenceEqual(headers) && unmarked && Marked(),
-                $"headers kept {Headers(content).SequenceEqual(headers)}, no notepad first {unmarked}, then one {Marked()}");
+            // Its row alone drawn again: not the whole list, the categories' headers kept, its notepad shown.
+            Check("a note saved: only its row drawn again (not the whole list, the headers kept, its notepad shown)",
+                CategoryList.TestRedraws == redraws && Headers(content).SequenceEqual(headers) && unmarked && Marked(),
+                $"{CategoryList.TestRedraws - redraws} whole redraws, headers kept {Headers(content).SequenceEqual(headers)}, "
+                + $"no notepad first {unmarked}, then one {Marked()}");
             var bytes = new FileInfo(Path.Combine(Store.Dir, "manager.json")).Length;
 
             var n = 0;
@@ -1926,25 +1999,27 @@ static partial class SelfTest
                 + $"(the whole list {applyMs:0.0} ms), the panel refreshed (a menu's save) {refreshMs:0.0} ms");
             Check("a note saved with a big store", saved == "Timed note 4", saved ?? "none");
 
-            // An alias that moves the row among its category's: the whole list drawn again, the row in its new place; one
-            // that leaves it where it is: its row alone. Last (if it wasn't), still last, then first.
+            // An alias that moves the row among its category's: the whole list drawn again (CategoryList.TestRedraws), the
+            // row in its new place, the headers (their names and counts the same) kept; one that leaves it where it is: its
+            // row alone. Last (if it wasn't), still last, then first.
             var category = CategoryList.CategoryName("SmmTestFixes");
             string[] Order() => [.. content.GetChildren().OfType<NModMenuRow>()
                 .Where(r => r.Mod?.manifest?.id != ModEntry.ModId && CategoryList.CategoryName(Copies.KeyOf(r.Mod)) == category)
                 .Select(r => Store.InfoFor(r.Mod)?.Alias ?? r.Mod?.manifest?.name ?? "")];
             var names = StringComparer.Create(Menus.Culture, ignoreCase: true);
             var alias = YoursIn(panel).GetNode<LineEdit>("Alias/Box");
-            var renames = new List<(string Name, bool Moved, bool Redrawn, bool Sorted)>();
+            var renames = new List<(string Name, bool Moved, bool Redrawn, bool HeadersKept, bool Sorted)>();
             foreach (var name in new[] { "ZZZ Timed", "ZZZ Timed too", "AAA Timed" })
             {
-                (headers, var at) = (Headers(content), row.GetIndex());
+                (headers, var at, redraws) = (Headers(content), row.GetIndex(), CategoryList.TestRedraws);
                 alias.Text = name;
                 await FrameMs(menu, () => alias.EmitSignal(Control.SignalName.FocusExited));
-                renames.Add((name, row.GetIndex() != at, !Headers(content).SequenceEqual(headers), Order().SequenceEqual(Order().Order(names))));
+                renames.Add((name, row.GetIndex() != at, CategoryList.TestRedraws != redraws, Headers(content).SequenceEqual(headers),
+                    Order().SequenceEqual(Order().Order(names))));
             }
-            Check("an alias that moves its row: the whole list drawn again, the row sorted into its new place; one that doesn't: its row alone",
-                renames.All(r => r.Sorted && r.Moved == r.Redrawn) && !renames[1].Moved && renames[2].Moved,
-                string.Join(" | ", renames.Select(r => $"{r.Name}: {(r.Moved ? "moved" : "stayed")}, {(r.Redrawn ? "the list" : "its row")}, "
+            Check("an alias that moves its row: the whole list drawn again, the row sorted into its new place, the headers kept; one that doesn't: its row alone",
+                renames.All(r => r.Sorted && r.Moved == r.Redrawn && r.HeadersKept) && !renames[1].Moved && renames[2].Moved,
+                string.Join(" | ", renames.Select(r => $"{r.Name}: {(r.Moved ? "moved" : "stayed")}, {(r.Redrawn ? "the list" : "its row")}, {(r.HeadersKept ? "headers kept" : "headers made anew")}, "
                     + $"{(r.Sorted ? "sorted" : "not sorted")}")));
         }
         finally
@@ -1960,7 +2035,7 @@ static partial class SelfTest
         await Wait(menu, 0.3);
     }
 
-    // The category headers' nodes, which a whole redraw makes anew.
+    // The category headers' nodes, which a redraw keeps where they show the same.
     static List<ulong> Headers(Control content) =>
         [.. content.GetChildren().Where(c => c.IsInGroup("SpireModManagerCategoryHeader")).Select(c => c.GetInstanceId())];
 

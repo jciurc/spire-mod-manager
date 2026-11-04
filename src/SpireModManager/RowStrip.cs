@@ -63,7 +63,7 @@ static class RowStrip
             // (what Up and Down do depends on it).
             var items = actions(row).ToList();
             var place = Store.Data.LoadOrderView ? $"{row.GetIndex()}/{row.GetParent()?.GetChildCount()}" : "";
-            var does = $"{place}|{string.Join("|", items.Select(i => $"{i.Label}/{i.Disabled}/{i.Flat}/{i.Tip}"))}";
+            var does = $"{place}|{string.Join("|", items.Select(i => i.Shows()))}";
             var margin = Store.Data.LoadOrderView ? -LoadOrderMargin : -RightMargin;
             if (row.GetNodeOrNull<HBoxContainer>(path) is not { } buttons || buttons.GetMeta(SaysMeta, "").AsString() != does)
                 buttons = Buttons(row, name, path, items, does, margin);
