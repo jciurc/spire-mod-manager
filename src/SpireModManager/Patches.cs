@@ -634,7 +634,7 @@ static class ModInfoClearPatch
 }
 
 // Ctrl shortcuts on our Modding page: Z undo, Y or Shift+Z redo, F search, S save profile, A pick all shown, D let go
-// of the picked mods. F3 opens and closes the page. Unhandled keys only, so a focused text box keeps its own.
+// of the picked mods. Enter opens the highlighted row, Space picks it or lets it go. F3 opens and closes the page. Unhandled keys only, so a focused text box keeps its own.
 [HarmonyPatch(typeof(NInputManager), "_UnhandledKeyInput")]
 static class ShortcutsPatch
 {
@@ -654,6 +654,8 @@ static class ShortcutsPatch
                 InputEventKey { Keycode: ManagerKey, Pressed: true, Echo: false, CtrlPressed: false, ShiftPressed: false, AltPressed: false, MetaPressed: false } =>
                     OpenOrClose(),
                 InputEventKey { Keycode: Key.D, Pressed: true, Echo: false, CtrlPressed: true, ShiftPressed: false, AltPressed: false } => Deselect(),
+                InputEventKey { Keycode: Key.Enter or Key.KpEnter or Key.Space, Pressed: true, Echo: false, CtrlPressed: false, ShiftPressed: false, AltPressed: false, MetaPressed: false } key =>
+                    RowKey(pick: key.Keycode == Key.Space),
                 _ => false,
             };
             if (!handled)
@@ -716,6 +718,29 @@ static class ShortcutsPatch
             return false;
         MenuPanel.Close();
         return LetGo();
+    }
+
+    // Enter opens the highlighted row (under the mouse, or a controller's) in the info panel, as a click does, letting go of
+    // the picked mods; Space picks it or lets it go, as Ctrl-click does. Our views only, with nothing of ours open. A row
+    // with the keyboard's focus keeps the game's keys.
+    static bool RowKey(bool pick)
+    {
+        if (Store.Data.VanillaView || DialogOpen || MenuPanel.IsOpen || Typing()
+            || HistoryBar.Screen is not { } screen || !GodotObject.IsInstanceValid(screen) || !screen.IsVisibleInTree()
+            || !PageVisits.OnTop(screen))
+            return false;
+        var content = screen.GetNode<Control>("%ModsScrollContainer/Mask/Content");
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.IsVisibleInTree() && RowState.Focused(r)) is not { } row
+            || row.HasFocus())
+            return false;
+        if (pick)
+            Selection.Pick(content, row, toggle: true, range: false);
+        else
+        {
+            Selection.Clear(content);
+            CategoryList.Select(content, row);
+        }
+        return true;
     }
 
     static void Postfix(InputEvent inputEvent)
