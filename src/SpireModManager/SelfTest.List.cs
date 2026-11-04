@@ -153,7 +153,7 @@ static partial class SelfTest
                 CategoryList.Select(screen, other);
                 await PanelFor(menu, screen, other);
                 await Wait(menu, 0.5);
-                var descriptionLabel = panel.GetNode<RichTextLabel>("ModDescription");
+                var descriptionLabel = PanelScroll.Description(panel);
                 var (shown, raw) = (descriptionLabel.GetParsedText(), descriptionLabel.Text);
                 await Capture(screen, outDir, "17b-game-error-panel");
                 // Its row's card in the shots too: the game's box, then the gap before Author; with a note, the card's other
@@ -371,8 +371,8 @@ static partial class SelfTest
         await PanelFor(menu, screen, ours);
         await Wait(menu, 0.5);
         Check("row state reads the game's: the selected row is selected, another not", RowState.Selected(ours) && !RowState.Selected(other));
-        var description = panel.GetNode<RichTextLabel>("ModDescription").GetParsedText();
-        var yours = panel.GetNode<Control>("SpireModManagerYours");
+        var description = PanelScroll.Description(panel).GetParsedText();
+        var yours = YoursIn(panel);
         LineEdit Line(string field) => yours.GetNode<LineEdit>($"{field}/Box");
         var notes = yours.GetNode<TextEdit>("Notes/Box");
         var titleText = panel.GetNode<RichTextLabel>("ModTitle").GetParsedText();
@@ -397,18 +397,22 @@ static partial class SelfTest
         var keywordsAt = Array.FindIndex(facts, l => l.StartsWith(keywordsLabel + ": "));
         var keywords = $"{keywordsLabel}: {string.Join(", ", HiddenTagNames.Where(t => Search.Matches(ours.Mod, t)).Select(t => t.TrimStart('#')))}";
         Check("Size, then Modified content, then Other keywords: the hidden tags that find the mod, bare names with no \"#\", in their order (this mod: enabled, "
-            + "local, installed, loaded... renamed, note)", keywordsAt > 1 && facts[keywordsAt - 2].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.SIZE") + ": ")
+            + "local, installed, stable, beta, loaded... renamed, note)", keywordsAt > 1 && facts[keywordsAt - 2].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.SIZE") + ": ")
             && facts[keywordsAt - 1].StartsWith(Menus.Text("SPIRE_MOD_MANAGER.MODIFIED_CONTENT") + ": ") && facts[keywordsAt] == keywords
-            && keywords.StartsWith($"{keywordsLabel}: enabled, local, installed, loaded, ") && keywords.Contains("renamed, note") && !keywords.Contains('#')
+            && keywords.StartsWith($"{keywordsLabel}: enabled, local, installed, stable, beta, loaded, ") && keywords.Contains("renamed, note") && !keywords.Contains('#')
             && !keywords.Split(", ").Contains("notes"), $"{(keywordsAt < 0 ? "no row" : facts[keywordsAt])}; wanted {keywords}");
-        var panelText = panel.GetNode<RichTextLabel>("ModDescription");
+        var panelText = PanelScroll.Description(panel);
         var marked = panelText.Text.Split('\n');
         var keywordsRow = marked.FirstOrDefault(l => l.Contains(keywordsLabel)) ?? "";
         var sizeTerm = $"[gold]{Menus.Text("SPIRE_MOD_MANAGER.SIZE")}[/gold]: ";
         var sizeRow = marked.FirstOrDefault(l => l.StartsWith(sizeTerm)) ?? "";
         Check("Other keywords look like the other facts: the term in gold, as Size's, the keywords in the panel text's colour (none of their own), each name a link",
-            sizeRow.Length > 0 && !sizeRow.Contains("[color=") && keywordsRow.StartsWith($"[gold]{keywordsLabel}[/gold]: [url=htag:enabled]enabled[/url], ")
+            sizeRow.Length > 0 && !sizeRow.Contains("[color=") && keywordsRow.StartsWith($"[url={ModDetails.KeywordsTipMeta}][gold]{keywordsLabel}[/gold][/url]: [url=htag:enabled]enabled[/url], ")
             && !keywordsRow.Contains("[color=") && keywordsRow.EndsWith("[/url]"), $"{keywordsRow} (Size's: {sizeRow})");
+        // The term's tip (Jordan, 28 Oct), from its link; none for the keywords' own links.
+        Check("Other keywords' term has a tip: what the keywords are", ModDetails.KeywordsTip(ModDetails.KeywordsTipMeta)
+            == "Searchable keywords added by Spire Mod Manager to help filter mods by their state" && ModDetails.KeywordsTip("htag:enabled") == null,
+            ModDetails.KeywordsTip(ModDetails.KeywordsTipMeta) ?? "none");
         var searchBox = screen.GetNode<LineEdit>("ModsBorder/SpireModManagerSearch");
         panelText.EmitSignal(RichTextLabel.SignalName.MetaClicked, "htag:enabled");
         var searched = searchBox.Text;
@@ -457,10 +461,10 @@ static partial class SelfTest
         Check("the thumbnail is 256 x 144 (the scene's minimum size lifted)", panel.GetNode<Control>("ModImage").Size == new Vector2(256, 144), $"{panel.GetNode<Control>("ModImage").Size}");
         Check("automatic tags beside the Tags term", yours.GetNodeOrNull<Control>("Tags/Term/SystemTags") is { Visible: true } system && system.GetChildCount() > 0);
         var image = panel.GetNode<TextureRect>("ModImage");
-        var description0 = panel.GetNode<Control>("ModDescription").OffsetTop;
+        var description0 = BoxIn(panel).OffsetTop;
         image.Texture = ImageTexture.CreateFromImage(Image.CreateEmpty(16, 9, false, Image.Format.Rgba8));
         Layout.PlaceInfo(panel);
-        var withPicture = panel.GetNode<Control>("ModDescription").OffsetTop;
+        var withPicture = BoxIn(panel).OffsetTop;
         image.Texture = ImageTexture.CreateFromImage(Image.CreateEmpty(10, 10, false, Image.Format.Rgba8));
         Layout.PlaceInfo(panel);
         Check("a square picture: full height, against the right edge", image.Size == new Vector2(ModDetails.ThumbHeight, ModDetails.ThumbHeight)
@@ -485,7 +489,7 @@ static partial class SelfTest
         CategoryList.Select(screen, other);
         await PanelFor(menu, screen, other);
         await Wait(menu, 0.5);
-        var keywordsBefore = panel.GetNode<RichTextLabel>("ModDescription").Text;
+        var keywordsBefore = PanelScroll.Description(panel).Text;
         notes.Text = "  Typed in the panel \n";
         notes.EmitSignal(Control.SignalName.FocusExited);
         var tags = Line("Tags");
@@ -493,7 +497,7 @@ static partial class SelfTest
         tags.EmitSignal(Control.SignalName.FocusExited);
         await Wait(menu, 0.3);
         Check("panel saves notes, trimmed", Store.InfoFor("SmmTestFixes")?.Notes == "Typed in the panel" && notes.Text == "Typed in the panel", notes.Text);
-        var keywordsAfter = panel.GetNode<RichTextLabel>("ModDescription").Text;
+        var keywordsAfter = PanelScroll.Description(panel).Text;
         Check("Other keywords follow a save in the panel: note once it has a note", !keywordsBefore.Contains("[url=htag:note]note[/url]")
             && keywordsAfter.Contains("[url=htag:note]note[/url]"),
             $"before \"{keywordsBefore[Math.Max(0, keywordsBefore.Length - 160)..]}\", after \"{keywordsAfter[Math.Max(0, keywordsAfter.Length - 160)..]}\"");
@@ -532,7 +536,7 @@ static partial class SelfTest
         await Capture(screen, outDir, "9-notes-editing");
 
         // Fields sit right under the details; Cancel puts the text back; the alias field shows on the row.
-        var details = panel.GetNode<Control>("ModDescription");
+        var details = PanelScroll.Description(panel);
         Check("the fields sit right below the details", Math.Abs(yours.OffsetTop - details.OffsetBottom - ModDetails.FieldsGap) < 1,
             $"{details.OffsetBottom} -> {yours.OffsetTop}..{yours.OffsetBottom}");
         notes.GrabFocus();
@@ -688,6 +692,10 @@ static partial class SelfTest
             Check("hover cards: near the right edge, a card opens left of the mouse", right == null, right ?? "");
             var corner = await ProbeAt(view - new Vector2(210, 50), up: true, left: true);
             Check("hover cards: in the bottom-right corner, a card opens above its trigger and left of the mouse", corner == null, corner ?? "");
+            // In the last 15% at the bottom and right, with room below and right: above and left all the same (Jordan, 28 Oct)
+            var zone = await ProbeAt(new Vector2(view.X * 0.87f - probe.Size.X / 2, view.Y * 0.87f - probe.Size.Y / 2), up: true, left: true);
+            Check("hover cards: in the screen's last 15% at the bottom and right, a card opens above its trigger and left of the mouse, though it fits below "
+                + "and right", zone == null, zone ?? "");
         }
         finally
         {
@@ -763,10 +771,10 @@ static partial class SelfTest
         var countsNew = HistoryBar.Counts();
         Check("a mod installed now joins the active profile as off, so its being on is an unsaved edit; it counts as turned on (+1)",
             Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod" && !m.Enabled) == true && Profiles.Edited
-            && Profiles.UnsavedChanges().On.Any(m => m.Name == "Fresh Mod") && OnInSnapshot(History.Entered, "SmmFreshMod", enabled: false)
+            && Profiles.UnsavedChanges().On.Any(m => m.Name == "Fresh Mod") && OnInSnapshot(History.Loaded, "SmmFreshMod", enabled: false)
             && countsNew.On == countsBefore.On + 1 && countsNew.Off == countsBefore.Off,
             $"saved off {Profiles.Active?.Mods.Any(m => m.Id == "SmmFreshMod" && !m.Enabled)}, edited {wasEdited} -> {Profiles.Edited}, "
-            + $"off in Revert all's state {OnInSnapshot(History.Entered, "SmmFreshMod", enabled: false)}, counts {countsBefore} -> {countsNew}");
+            + $"off in the launch state {OnInSnapshot(History.Loaded, "SmmFreshMod", enabled: false)}, counts {countsBefore} -> {countsNew}");
         Check("a mod installed now gets a New tag, first", Tags.For(fresh).FirstOrDefault()?.Text == "New");
         var asMeant = HiddenTagsAsMeant(content);
         Check("a mod installed now: hidden tags on the list as it is (it #new, #changed and #pending), each finding the rows it means",
@@ -1137,9 +1145,9 @@ static partial class SelfTest
     // game failed it, D has a game error, E is off but loaded, with a tag of its own named "Enabled"; and each name
     // without its "#".
     // Every hidden tag, in HiddenTags' order (the info panel's Other keywords lists them in it).
-    static readonly string[] HiddenTagNames = ["#enabled", "#disabled", "#workshop", "#local", "#installed", "#uninstalled", "#missing", "#loaded", "#notloaded",
-        "#pending", "#new", "#changed", "#moved", "#edited", "#renamed", "#note", "#uncategorized", "#unmet", "#needed", "#order", "#duplicate", "#clash", "#aside",
-        "#managers", "#failed", "#gameerror", "#error", "#warning", "#problem"];
+    static readonly string[] HiddenTagNames = ["#enabled", "#disabled", "#workshop", "#local", "#installed", "#stable", "#beta", "#uninstalled", "#missing",
+        "#loaded", "#notloaded", "#pending", "#new", "#changed", "#moved", "#edited", "#renamed", "#note", "#uncategorized", "#unmet", "#needed", "#order",
+        "#duplicate", "#clash", "#aside", "#managers", "#failed", "#gameerror", "#error", "#warning", "#problem"];
 
     static void TestHiddenTags(Control content)
     {
@@ -1264,16 +1272,17 @@ static partial class SelfTest
         }
     }
 
-    // Stable and Beta, by the game's own branch rule over a Workshop mod's supported range (made-up mods and details):
-    // a chip only on a mod marked for one branch, whose click searches for that ("#Stable -#Beta"); #stable and #beta
-    // (and the plain words) find every mod marked for a branch, "#stable -#beta" the ones for stable only. No range, or a
-    // local mod: both, no chip.
+    // Stable only and Beta only, by the game's own branch rule over a Workshop mod's supported range (made-up mods and
+    // details): a chip only on a mod marked for one branch, whose click searches for it (#"Stable only"); #stable and
+    // #beta (and the plain words), its Other keywords, find every mod marked for a branch, "#stable -#beta" the ones for
+    // stable only, as #"stable only" does. No range, or a local mod: both, no chip.
     static void TestBranchTags()
     {
-        string[] queries = ["#stable", "#beta", "#stable -#beta", "stable", "stable -beta", "table"];
+        string[] queries = ["#stable", "#beta", "#stable -#beta", "stable", "stable -beta", "table", "#\"stable only\"", "#\"beta only\""];
         (string Name, List<(string, string)> Ranges)[] cases =
             [("stable only", [("public", "public")]), ("beta and up", [("public-beta", "")]), ("both", [("public", "public-beta")]), ("no range", [])];
         var seen = new List<string>();
+        string Keywords(Mod mod) => string.Join(",", HiddenTags.Of(mod).Where(k => k is "stable" or "beta"));
         for (var i = 0; i < cases.Length; i++)
         {
             var mod = new Mod
@@ -1286,22 +1295,22 @@ static partial class SelfTest
             WorkshopInfo.TestSet(id, new WorkshopInfo.Details(DateTime.Now, DateTime.Now, [], cases[i].Ranges, 0, null));
             try
             {
-                var chips = string.Join("/", Tags.For(mod).Where(c => c.Text is "Stable" or "Beta").Select(c => $"{c.Text} ({c.Search})"));
+                var chips = string.Join("/", Tags.For(mod).Where(c => c.Text is "Stable only" or "Beta only").Select(c => $"{c.Text} ({c.Search})"));
                 var found = string.Concat(queries.Select(q => Search.Matches(mod, q) ? "y" : "n"));
-                seen.Add($"{cases[i].Name}: [{chips}] {found}");
+                seen.Add($"{cases[i].Name}: [{chips}] {found} {Keywords(mod)}");
             }
             finally
             {
                 WorkshopInfo.TestSet(id, null);
             }
         }
-        var local = Dependencies.Find("SmmTestFixes");
-        seen.Add($"local: [{string.Join("/", Tags.For(local).Where(c => c.Text is "Stable" or "Beta").Select(c => c.Text))}] "
-            + string.Concat(queries.Select(q => Search.Matches(local, q) ? "y" : "n")));
-        Check("Stable and Beta by the game's branch rule: a chip on one-branch mods that searches for it; #stable, #beta, #stable -#beta "
-            + "and the plain words find them; \"table\" only through a chip's text (as any chip)",
-            seen.SequenceEqual(["stable only: [Stable (#Stable -#Beta)] ynyyyy", "beta and up: [Beta (#Beta -#Stable)] nynnnn",
-                "both: [] yynynn", "no range: [] yynynn", "local: [] yynynn"]),
+        if (Dependencies.Find("SmmTestFixes") is { } local) // without it, its entry missing fails the check
+            seen.Add($"local: [{string.Join("/", Tags.For(local).Where(c => c.Text is "Stable only" or "Beta only").Select(c => c.Text))}] "
+                + string.Concat(queries.Select(q => Search.Matches(local, q) ? "y" : "n")) + $" {Keywords(local)}");
+        Check("Stable only and Beta only by the game's branch rule: a chip on one-branch mods that searches for it; #stable, #beta, #stable -#beta "
+            + "and the plain words find them, stable and beta among Other keywords; \"table\" only through a chip's text (as any chip)",
+            seen.SequenceEqual(["stable only: [Stable only (#\"Stable only\")] ynyyyyyn stable", "beta and up: [Beta only (#\"Beta only\")] nynnnnny beta",
+                "both: [] yynynnnn stable,beta", "no range: [] yynynnnn stable,beta", "local: [] yynynnnn stable,beta"]),
             string.Join(" | ", seen));
     }
 
@@ -1335,6 +1344,13 @@ static partial class SelfTest
         Check("Cosmetic: the Workshop's Cosmetics and Audio categories and art or sound words; not QoL, tools or UI",
             Tags.IsCosmetic(["Cosmetics"]) && Tags.IsCosmetic(["Characters", "Audio"]) && Tags.IsCosmetic(["Sound Effects"]) && Tags.IsCosmetic(["Card Art"])
             && !Tags.IsCosmetic(["QoL", "Tools & APIs", "Utility"]) && !Tags.IsCosmetic(["UI"]) && !Tags.IsCosmetic([]) && !Tags.IsCosmetic(null));
+        // And a pack replacing the game's art or sound (Jordan, 25 Oct: a reskin whose tags didn't say so): images, sounds,
+        // videos and fonts count, scenes, scripts and data don't. The fixture mods replace none of the game's files.
+        string[] art = ["images/packed/character_select/char_select_ironclad.png", "sfx/hit.OGG", "fonts/kreon.ttf", "videos/intro.ogv"],
+            notArt = ["scenes/combat/creature.tscn", "scripts/x.gd", "localization/eng/cards.json"];
+        Check("Cosmetic from the game's files a pack replaces: art and sound (any case), not scenes, scripts or data; none for the fixture mods",
+            art.All(GameChanges.IsArt) && !notArt.Any(GameChanges.IsArt) && !Tags.For(Dependencies.Find("SmmTestLib")).Any(c => c.Text == "Cosmetic"),
+            $"art {string.Join(", ", art.Where(p => !GameChanges.IsArt(p)))}; not art {string.Join(", ", notArt.Where(GameChanges.IsArt))}");
         // Tags clicked on a row: "#Library" alone; Shift adds "#Gameplay" (both needed); "#Local" matches only the tag.
         List<string> Visible() => content.GetChildren().OfType<NModMenuRow>().Where(r => r.Visible).Select(r => r.Mod?.manifest?.id ?? "").ToList();
         void ClickChip(string modId, string tag, bool shift)
@@ -1458,9 +1474,9 @@ static partial class SelfTest
         Check("click-to-search: a -#tag and \"exact text\" stay whole terms", whole.SequenceEqual(["-#Library mod #Gameplay", "\"two words\""]),
             string.Join(" | ", whole));
         string[] flipped = [After("-#Gameplay mod", () => Tag("Gameplay", true)), After("\"Don't", () => Tag("Local", true)),
-            After("", () => SpireModManager.Search.ByChip(content, new Tags.Chip("Stable", Colors.White, Search: "#Stable -#Beta"), false))];
+            After("", () => SpireModManager.Search.ByChip(content, new Tags.Chip("Stable only", Colors.White, Search: "#\"Stable only\""), false))];
         Check("click-to-search: Shift on a left-out tag puts it in, an open quote is closed first, a branch chip searches for what it means",
-            flipped.SequenceEqual(["mod #Gameplay", "\"Don't\" #Local", "#Stable -#Beta"]), string.Join(" | ", flipped));
+            flipped.SequenceEqual(["mod #Gameplay", "\"Don't\" #Local", "#\"Stable only\""]), string.Join(" | ", flipped));
         // Brackets, OR, "|" and AND are pieces of their own: a term taken out takes the OR (else AND) that joined it, so the
         // rest means what it did, and brackets left empty go; one added after an OR still being typed completes it.
         string[] operators = [After("#a OR #b #c", () => Tag("b", true)), After("(#a OR #b) #c", () => Tag("a", true)),
@@ -1793,6 +1809,151 @@ static partial class SelfTest
         Check("300 made-up mods: the same answers as the slow way (on, copies, libraries, required for, missing, off)",
             wrong.Count == 0 && Lookups.Current == null, $"{wrong.Count} differ: {string.Join(" | ", wrong.Take(3))}");
         await TestManyRows(menu, screen, content, mods, saved);
+    }
+
+    // A field saved with our data as big as a big list's (about 260 mods' details and four profiles of 260 mods each, as a
+    // player with 250 mods has): a note typed in the info panel and its box left, timed to the end of the frame, and the
+    // save's parts one by one. Our data and the launch state are put back after.
+    static async Task TestSaveCost(Node menu, NModdingScreen screen, Control content)
+    {
+        var panel = screen.GetNode<NModInfoContainer>("%ModInfoContainer");
+        if (content.GetChildren().OfType<NModMenuRow>().FirstOrDefault(r => r.Mod?.manifest?.id == "SmmTestFixes") is not { } row)
+        {
+            Results.Add("SKIP save cost: fixture mods missing");
+            return;
+        }
+        var (kept, loaded, steps) = (Store.Clone(Store.Data), History.Loaded, History.TestKeep()); // undo steps too: the saves' hold the big data
+        var big = Store.Clone(Store.Data);
+        for (var i = 0; i < 260; i++)
+            big.Mods[$"SmmBig{i:000}"] = new ModInfo
+            {
+                Category = big.Categories.ElementAtOrDefault(i % 4)?.Name, Alias = i % 9 == 0 ? $"Big {i}" : null,
+                Tags = i % 3 == 0 ? ["co-op", $"tag {i % 7}"] : null, Notes = i % 4 == 0 ? $"A note on made-up mod {i}, about as long as a real one." : null,
+            };
+        List<ProfileMod> list = [.. Enumerable.Range(0, 260).Select(i => new ProfileMod($"SmmBig{i:000}", ModSource.SteamWorkshop, i % 5 != 0))];
+        for (var p = 0; p < 4; p++)
+            big.Profiles.Add(new Profile { Name = $"Big profile {p}", Mods = [.. list] });
+        Store.TestSet(big);
+        // The undo snapshot, made from a shallow copy in one pass, is what the round trip it replaced made: the data
+        // without its view state (here all of it set), the data itself untouched.
+        (big.UncategorizedCollapsed, big.ManagersWarningDismissed, big.SameIdDismissed) = (true, true, "SmmBig000");
+        (big.ShareChoices, big.MenuButtonAt) = (new ShareChoice(true, true, false, true), new ScreenPoint(12.5f, 40));
+        if (big.Categories.FirstOrDefault() is { } folded)
+            folded.Collapsed = true;
+        var whole = Store.TestJson(big);
+        var roundTrip = Store.Clone(big);
+        roundTrip.VanillaView = roundTrip.LoadOrderView = roundTrip.UncategorizedCollapsed = roundTrip.ManagersWarningDismissed = false;
+        (roundTrip.ShareChoices, roundTrip.SameIdDismissed, roundTrip.MenuButtonAt) = (null, null, null);
+        roundTrip.Categories.ForEach(c => c.Collapsed = false);
+        var edits = Store.EditsJson();
+        Check("the undo snapshot in one pass: the same as the round trip it replaced, our data untouched",
+            edits == Store.TestJson(roundTrip) && Store.TestJson(big) == whole && big.Categories.FirstOrDefault()?.Collapsed != false,
+            $"{edits.Length} vs {Store.TestJson(roundTrip).Length} chars");
+        (big.UncategorizedCollapsed, big.ManagersWarningDismissed, big.SameIdDismissed, big.ShareChoices, big.MenuButtonAt) = (false, false, null, null, null);
+        big.Categories.ForEach(c => c.Collapsed = false);
+        History.TestLoaded(History.TestNow()); // launched with it: few changes since, as in a real session
+        try
+        {
+            CategoryList.Select(screen, row);
+            await PanelFor(menu, screen, row);
+            await Wait(menu, 0.5);
+            // From no note (its notepad gone), so the one shown after is the saves'.
+            var box = YoursIn(panel).GetNode<TextEdit>("Notes/Box");
+            box.Text = "";
+            await FrameMs(menu, () => box.EmitSignal(Control.SignalName.FocusExited));
+            bool Marked() => row.GetNodeOrNull<Control>("SpireModManagerEditedMark") is { Visible: true };
+            var (headers, unmarked) = (Headers(content), !Marked());
+            var saves = await NoteSaves(menu, screen, "Timed note");
+            var saved = Store.InfoFor("SmmTestFixes")?.Notes;
+            // Its row alone drawn again: the categories' headers (made anew by a whole redraw) kept, its notepad shown.
+            Check("a note saved: only its row drawn again (the headers kept, its notepad shown)",
+                Headers(content).SequenceEqual(headers) && unmarked && Marked(),
+                $"headers kept {Headers(content).SequenceEqual(headers)}, no notepad first {unmarked}, then one {Marked()}");
+            var bytes = new FileInfo(Path.Combine(Store.Dir, "manager.json")).Length;
+
+            var n = 0;
+            void Edit() => Store.Data.Mods["SmmBig000"].Notes = $"Edited {n++}";
+            static double Ms(Action action)
+            {
+                CleanHeap();
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                for (var i = 0; i < 5; i++)
+                    action();
+                return watch.Elapsed.TotalMilliseconds / 5;
+            }
+            var writeMs = Ms(Store.SaveViewState);
+            var editsMs = Ms(() =>
+            {
+                Edit();
+                Store.EditsJson();
+            });
+            var takeMs = Ms(() =>
+            {
+                Edit();
+                History.TestNow();
+            });
+            var listeners = History.TestTimeChanged();
+            var rowMs = Ms(() => CategoryList.FieldsSaved(content, ["SmmTestFixes"], renamed: false));
+            var applyMs = Ms(() => CategoryList.Apply(content));
+            var refreshMs = Ms(() => ModDetails.Refresh(screen));
+            Results.Add($"INFO a note saved in the info panel, our data as big as a big list's ({Store.Data.Mods.Count} mods' details, "
+                + $"{Store.Data.Profiles.Count} profiles, about {bytes / 1024} KB): to the end of the frame {saves[2]:0.0} ms (fastest {saves[0]:0.0}); "
+                + $"of it, the file written {writeMs:0.0} ms, the undo snapshot {takeMs:0.0} ms (its JSON {editsMs:0.0}), "
+                + $"the history's listeners {string.Join(", ", listeners.Select(l => $"{l.Name} {l.Ms:0.0}"))} ms, its row drawn again {rowMs:0.0} ms "
+                + $"(the whole list {applyMs:0.0} ms), the panel refreshed (a menu's save) {refreshMs:0.0} ms");
+            Check("a note saved with a big store", saved == "Timed note 4", saved ?? "none");
+
+            // An alias that moves the row among its category's: the whole list drawn again, the row in its new place; one
+            // that leaves it where it is: its row alone. Last (if it wasn't), still last, then first.
+            var category = CategoryList.CategoryName("SmmTestFixes");
+            string[] Order() => [.. content.GetChildren().OfType<NModMenuRow>()
+                .Where(r => r.Mod?.manifest?.id != ModEntry.ModId && CategoryList.CategoryName(Copies.KeyOf(r.Mod)) == category)
+                .Select(r => Store.InfoFor(r.Mod)?.Alias ?? r.Mod?.manifest?.name ?? "")];
+            var names = StringComparer.Create(Menus.Culture, ignoreCase: true);
+            var alias = YoursIn(panel).GetNode<LineEdit>("Alias/Box");
+            var renames = new List<(string Name, bool Moved, bool Redrawn, bool Sorted)>();
+            foreach (var name in new[] { "ZZZ Timed", "ZZZ Timed too", "AAA Timed" })
+            {
+                (headers, var at) = (Headers(content), row.GetIndex());
+                alias.Text = name;
+                await FrameMs(menu, () => alias.EmitSignal(Control.SignalName.FocusExited));
+                renames.Add((name, row.GetIndex() != at, !Headers(content).SequenceEqual(headers), Order().SequenceEqual(Order().Order(names))));
+            }
+            Check("an alias that moves its row: the whole list drawn again, the row sorted into its new place; one that doesn't: its row alone",
+                renames.All(r => r.Sorted && r.Moved == r.Redrawn) && !renames[1].Moved && renames[2].Moved,
+                string.Join(" | ", renames.Select(r => $"{r.Name}: {(r.Moved ? "moved" : "stayed")}, {(r.Redrawn ? "the list" : "its row")}, "
+                    + $"{(r.Sorted ? "sorted" : "not sorted")}")));
+        }
+        finally
+        {
+            Store.TestSet(kept);
+            History.TestLoaded(loaded);
+            History.TestPutBack(steps);
+            Store.SaveViewState();
+            History.Enter();
+            CategoryList.Redraw(content);
+            ModDetails.Refresh(screen);
+        }
+        await Wait(menu, 0.3);
+    }
+
+    // The category headers' nodes, which a whole redraw makes anew.
+    static List<ulong> Headers(Control content) =>
+        [.. content.GetChildren().Where(c => c.IsInGroup("SpireModManagerCategoryHeader")).Select(c => c.GetInstanceId())];
+
+    // A note typed in the info panel (its mod shown) and its box left, five times, each timed to the end of its frame: the
+    // times sorted (the middle one is the usual), the last note kept.
+    static async Task<List<double>> NoteSaves(Node menu, NModdingScreen screen, string note)
+    {
+        var notes = YoursIn(screen.GetNode("%ModInfoContainer")).GetNode<TextEdit>("Notes/Box");
+        var saves = new List<double>();
+        for (var i = 0; i < 5; i++)
+        {
+            notes.Text = $"{note} {i}";
+            saves.Add(await FrameMs(menu, () => notes.EmitSignal(Control.SignalName.FocusExited)));
+        }
+        saves.Sort();
+        return saves;
     }
 
     // The same mods as rows of a page (out of sight to the left of this one), in our row style: each row's line under
@@ -2297,11 +2458,15 @@ static partial class SelfTest
             await Wait(menu, 0.5);
         }
 
-        // Drag the first row after ours by its handle to just below the third.
+        // Drag the first row after ours by its handle to just below the third (below the whole of the third's mod where it's
+        // installed more than once: a drop never splits a mod's rows).
         var first = Rows()[pinned];
         var handle = first.GetNode<Control>("SpireModManagerHandle");
         var from = handle.GetGlobalRect().GetCenter();
-        var to = new Vector2(from.X, Rows()[pinned + 2].GetGlobalRect().End.Y - 4);
+        var third = pinned + 2;
+        while (third + 1 < Rows().Count && Rows()[third + 1].Mod?.manifest?.id is { } next && next == Rows()[third].Mod?.manifest?.id)
+            third++;
+        var to = new Vector2(from.X, Rows()[third].GetGlobalRect().End.Y - 4);
         void Send(InputEvent e) => handle.GetParent().EmitSignal(Control.SignalName.GuiInput, e);
         Send(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, GlobalPosition = from, Position = from });
         Send(new InputEventMouseMotion { GlobalPosition = to, Position = to });
@@ -2310,7 +2475,7 @@ static partial class SelfTest
         Send(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = to, Position = to });
         await Wait(menu, 0.5);
         var dragged = Ids();
-        Check("drag moves the row below the third", dragged.IndexOf(first.Mod?.manifest?.id ?? "") == pinned + 2 && dragged.SequenceEqual(Saved()),
+        Check("drag moves the row below the third (and its mod's other rows)", dragged.IndexOf(first.Mod?.manifest?.id ?? "") == third && dragged.SequenceEqual(Saved()),
             string.Join(", ", dragged));
 
         // A press alone already shows the drag (dimmed list, drop line); releasing without moving changes nothing.
@@ -2359,11 +2524,12 @@ static partial class SelfTest
             hiddenDrags.All(d => d.EndsWith(": 0 lines, kept")), string.Join("; ", hiddenDrags));
 
         // Multi-select: pick the first and third rows after ours, drag the first's grip below the last row; both move,
-        // in their order.
+        // in their order, each with its other copies' rows (a mod installed more than once moves as one block).
         var all = Rows();
         Selection.Pick(content, all[pinned], toggle: false, range: false);
         Selection.Pick(content, all[pinned + 2], toggle: true, range: false);
-        var pickedIds = new[] { all[pinned], all[pinned + 2] }.Select(r => r.Mod?.manifest?.id ?? "").ToList();
+        var pickedMods = new[] { all[pinned], all[pinned + 2] }.Select(r => r.Mod?.manifest?.id ?? "").ToHashSet();
+        var pickedIds = all.Select(r => r.Mod?.manifest?.id ?? "").Where(pickedMods.Contains).ToList();
         Check("Ctrl-click picks a second row, both highlighted", Selection.Mods.Count == 2
             && Rows().Count(r => r.GetNodeOrNull<Control>("SpireModManagerPicked")?.Visible == true) == 2);
         var grip = all[pinned].GetNode<Control>("SpireModManagerHandle");
@@ -2375,7 +2541,8 @@ static partial class SelfTest
         await Capture(screen, outDir, "11b-multi-drag");
         grip.GetParent().EmitSignal(Control.SignalName.GuiInput, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, GlobalPosition = bottom });
         await Wait(menu, 0.5);
-        Check("dragging a multi-selection moves the group, in order", Ids().TakeLast(2).SequenceEqual(pickedIds), string.Join(", ", Ids()));
+        Check("dragging a multi-selection moves the group, in order (each mod with all its rows)", Ids().TakeLast(pickedIds.Count).SequenceEqual(pickedIds),
+            string.Join(", ", Ids()));
         Selection.Clear(content);
 
         // Put the original order back: nothing pending again.
@@ -2429,6 +2596,7 @@ static partial class SelfTest
             Results.Add("SKIP dependencies: test mods not installed");
             return;
         }
+        var orderWas = LoadOrder.Mods(Rows());
         Check("dependency note names what it needs", Note("SmmTestContent").Contains("Test Framework"), Note("SmmTestContent"));
         if (WontLoad() != null)
             Check("missing dependency is called out", Note("SmmTestAddon").Contains(Missing + " (not installed)"), Note("SmmTestAddon"));
@@ -2443,7 +2611,7 @@ static partial class SelfTest
             await PanelFor(menu, screen, libSelected);
         }
         await Wait(menu, 0.3);
-        var facts = panel.GetNode<RichTextLabel>("ModDescription").Text;
+        var facts = PanelScroll.Description(panel).Text;
         Check("panel: required for, Open Folder", facts.Contains("Required for")
             && facts.Contains("Test Content") && facts.Contains("Test UI") && panel.GetNode<Control>("OpenFolderButton").Visible, facts);
 
@@ -2634,6 +2802,15 @@ static partial class SelfTest
             Check("hover shows links to each mod that needs it, and they go on leaving", shown == Dependencies.NeededBy("SmmTestLib").Count() && shown == 3
                 && !content.GetParent().GetChildren().Any(c => c.IsInGroup("SpireModManagerLinks")), $"{shown} shown");
         }
+
+        // The start's order back (Fix order left the framework and Test Content moved): the tests after this one start with
+        // nothing moved since launch, as a Revert all's undo brings a move back with the rest.
+        for (var i = 0; i < orderWas.Count; i++)
+            LoadOrder.Move(orderWas[i], i, Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("dependencies put back: the order from the start, nothing moved since launch", LoadOrder.Mods(Rows()).SequenceEqual(orderWas) && !LoadOrder.OrderChanged,
+            string.Join(", ", HistoryBar.Moves().Select(m => $"{m.Mod.manifest?.id} {m.Before}→{m.After}")));
     }
 
     // The bar under the search box: Enable all / Disable all for the page (or the search's matches),
@@ -2751,7 +2928,7 @@ static partial class SelfTest
                 CategoryList.ScrollTo(content, uiRow);
                 await Wait(menu, 1.5);
             }
-            var description = screen.GetNode<RichTextLabel>("%ModInfoContainer/ModDescription");
+            var description = PanelScroll.Description(screen.GetNode("%ModInfoContainer"));
             var look = uiRow.GetNode<Panel>("SelectionHighlight");
             var before = look.Modulate;
             description.EmitSignal(RichTextLabel.SignalName.MetaHoverStarted, "mod:SmmTestUi");
@@ -3072,10 +3249,12 @@ static partial class SelfTest
         await Press("ShowChangedButton");
         var lines = HistoryBar.Describe();
         // Each line's mod: the one whose name it holds, the longest if several ("Better Mod Menu (local fix)" holds
-        // "Better Mod Menu" too). Lines naming no mod (a switched profile, profiles) name none.
+        // "Better Mod Menu" too), every one of that name (the fixture's mod from both sources: its Workshop copy, read from
+        // mods_STEAMTEST, has no item id, so both read "Test Dual (Local)"). Lines naming no mod (a switched profile,
+        // profiles) name none.
         var mods = Rows().Select(r => r.Mod).OfType<Mod>().ToList();
-        var named = lines.Select(l => mods.Where(m => m.manifest?.name is { Length: > 0 } name && l.Contains(name)).MaxBy(m => m.manifest?.name?.Length))
-            .OfType<Mod>().ToHashSet();
+        var named = lines.SelectMany(l => mods.Where(m => m.manifest?.name is { Length: > 0 } name && l.Contains(name)).GroupBy(m => m.manifest?.name?.Length ?? 0)
+            .MaxBy(g => g.Key) ?? Enumerable.Empty<Mod>()).ToHashSet();
         var changed = Where(named.Contains);
         Check("Show: Changed: the mods Changes names, counted, Changed lit", Shown().SequenceEqual(changed) && changed.Contains("SmmTestUi")
             && Scope() == $"Changed since launch ({changed.Count})" && Choices() == "All Enabled Disabled Changed*", $"{Say()}; Changes: {string.Join(" | ", lines)}");
@@ -3187,7 +3366,7 @@ static partial class SelfTest
             CategoryList.Select(screen, panelRow);
             await PanelFor(menu, screen, panelRow);
             await Wait(menu, 0.3);
-            var description = screen.GetNode<RichTextLabel>("%ModInfoContainer/ModDescription");
+            var description = PanelScroll.Description(screen.GetNode("%ModInfoContainer"));
             string Filter() => content.HasMeta(CategoryList.FilterMeta) ? (string)content.GetMeta(CategoryList.FilterMeta) : "";
             string Said() => $"box \"{box.Text}\", filter \"{Filter()}\", shown {linkedRow.Visible}";
             const string misses = "SmmTestLib", finds = "SmmTest";

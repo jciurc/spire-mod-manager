@@ -5,6 +5,7 @@ using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
+using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Saves;
 
 namespace SpireModManager;
@@ -285,6 +286,7 @@ static partial class SelfTest
 
         var badge = screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge");
         Check("no order problem, no '!' on Load Order", badge is not { Visible: true });
+        var orderWas = LoadOrder.Mods(Rows());
         LoadOrder.Move(dependent, LoadOrder.Mods(Rows()).IndexOf(lib), Rows());
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
@@ -297,6 +299,58 @@ static partial class SelfTest
         CategoryList.Redraw(content);
         await Wait(menu, 0.3);
         Check("fixed: the '!' goes", screen.GetNodeOrNull<Control>("SpireModManagerLoadOrderToggle/WarningBadge") is not { Visible: true });
+        // The order as it was: the fix leaves the library moved, and the tests after it start with nothing moved since
+        // launch (a Revert all's undo, from either view, brings a move back with the rest).
+        for (var i = 0; i < orderWas.Count; i++)
+            LoadOrder.Move(orderWas[i], i, Rows());
+        CategoryList.Redraw(content);
+        await Wait(menu, 0.3);
+        Check("... put back: the order as before the move, no move since launch", LoadOrder.Mods(Rows()).SequenceEqual(orderWas) && !LoadOrder.OrderChanged,
+            string.Join(", ", HistoryBar.Moves().Select(m => $"{m.Mod.manifest?.id} {m.Before}→{m.After}")));
+
+        // An enabled mod the game failed to load (Test Fixes, needing nothing, marked failed for the row): the banner says
+        // so, its own part (Jordan, 25 Oct: "we have no error banner when an enabled mod fails loading"); its Show finds it
+        // (#failed), and its Go to stops at it.
+        if (Row("SmmTestFixes") is { Mod: { } failing } && Copies.Ticked(failing))
+        {
+            var stateWas = failing.state;
+            failing.state = ModLoadState.Failed;
+            try
+            {
+                CategoryList.Redraw(content);
+                await Wait(menu, 0.3);
+                var failedText = (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "";
+                screen.FindChild(LoadOrder.WarningName, true, false)?.FindChild("FilterProblemButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+                await Wait(menu, 0.3);
+                var (failedSearch, fixesShown) = (searchBox.Text, Row("SmmTestFixes")?.Visible == true);
+                screen.FindChild(LoadOrder.WarningName, true, false)?.FindChild("FilterProblemButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+                await Wait(menu, 0.3);
+                if (Row(ModEntry.ModId) is { } before)
+                    CategoryList.Select(screen, before);
+                var stopsAt = new List<string>();
+                for (var i = 0; i < 8; i++)
+                {
+                    screen.FindChild(LoadOrder.WarningName, true, false)?.FindChild("GoToProblemButton", true, false)?.EmitSignal(BaseButton.SignalName.Pressed);
+                    await Wait(menu, 0.2);
+                    stopsAt.Add(CategoryList.Selected?.manifest?.id ?? "");
+                }
+                Check("main list banner: an enabled mod that failed to load has its own part, \"1 enabled mod failed to load\"; its Show finds it (#failed), "
+                    + "its Go to stops at it", failedText.Split("  ·  ").Contains("1 enabled mod failed to load") && failedSearch.Contains("#failed") && fixesShown
+                    && stopsAt.Contains("SmmTestFixes"), $"\"{failedText}\"; Show \"{failedSearch}\", shown {fixesShown}; Go to {string.Join(", ", stopsAt)}");
+            }
+            finally
+            {
+                failing.state = stateWas;
+                searchBox.Text = "";
+                searchBox.EmitSignal(LineEdit.SignalName.TextChanged, "");
+                CategoryList.Redraw(content);
+                await Wait(menu, 0.3);
+            }
+            var failedGone = (screen.FindChild("OrderProblems", true, false) as Label)?.Text ?? "";
+            Check("... loaded again: that part goes", !failedGone.Contains("failed to load"), failedGone);
+        }
+        else
+            Results.Add("SKIP main list banner, a mod that failed to load: Test Fixes not installed, or off");
 
         // The banner every run can raise: Test Addon on needs a mod that isn't installed, so with it off the banner goes,
         // and its tick brings the banner back (TestBannersKeepRows, the managers banner's checks without Better Mod Menu).
@@ -447,7 +501,7 @@ static partial class SelfTest
             .All(e => e.IsEnabled) ?? true;
         if (ourRows.FirstOrDefault(r => r.Mod == copy) is { } copyRow)
         {
-            var steps = History.Steps(History.Track.List);
+            var (steps, movesWere) = (History.Steps(History.Track.List), HistoryBar.Moves().Count);
             Tickbox(copyRow).IsTicked = false;
             Tickbox(copyRow).EmitSignal(NTickbox.SignalName.Toggled, Tickbox(copyRow));
             await Wait(menu, 0.3);
@@ -458,6 +512,11 @@ static partial class SelfTest
                 && !Copies.Clashing().Any(m => m.manifest?.id == ModEntry.ModId);
             var aloneSay = $"{string.Join(" | ", ourRows.Select(Box))}; steps +{History.Steps(History.Track.List) - steps}; banner {Banner() != null}; "
                 + $"lines {offLines.Running ?? "none"} / {offLines.Other}";
+            // The entry made to turn it off (the game had none for a copy installed while it runs) goes with ours at the top.
+            var entries = SaveManager.Instance.SettingsSave.ModSettings?.ModList ?? [];
+            var oursLead = entries.TakeWhile(e => e.Id == ModEntry.ModId).Count() == entries.Count(e => e.Id == ModEntry.ModId)
+                && entries.Any(e => e is { Id: ModEntry.ModId, Source: ModSource.SteamWorkshop, IsEnabled: false });
+            var (movesNow, entriesSaid) = (HistoryBar.Moves().Count, string.Join(", ", entries.Select(e => $"{e.Id}/{e.Source}{(e.IsEnabled ? "" : " (off)")}")));
             History.Undo();
             await Wait(menu, 0.3);
             Check("... a click on one copy's box unticks it alone (its source's entries off), one undo step, no red banner (the other loads), no clash; "
@@ -466,6 +525,9 @@ static partial class SelfTest
                 alone && offLines == (null, Draft(OtherEnabled, ("other", Named(self))))
                 && offTips == ("", Draft(CopyOnTip, ("other", Named(self)), ("loads", Named(self))))
                 && Copies.Ticked(copy) && Copies.Ticked(self) && Tickbox(copyRow).IsTicked, $"{aloneSay}; then {string.Join(" | ", ourRows.Select(Box))}");
+            Check("... the entry made to turn it off goes with ours at the top, not last (the game sorts a mod by its id's last entry: this mod would load "
+                + "last next launch), and no other mod moves for Changes", oursLead && movesNow == movesWere,
+                $"entries {entriesSaid}; moves {movesWere} -> {movesNow}");
         }
         else
             Check("... a click on the Workshop copy's box: its row", false, string.Join(" | ", ourRows.Select(Box)));
@@ -1064,8 +1126,8 @@ static partial class SelfTest
     // under the rows gives the short fixture list room to scroll; it goes after. bannerRow: the row whose tick raises the
     // banner called name: Test Addon's (the main list banner, in every run) or Better Mod Menu's (the managers banner,
     // where it's installed); what: that banner in the checks' names. Starts and ends with that row's mod off. Showing the
-    // page again enters it anew (History.Enter: Revert all's state then, no undo steps), so the page's opening state and
-    // both undo histories are kept first and put back after: the tests after it undo and Revert all as they would have.
+    // page again enters it anew (History.Enter: no undo steps), so both undo histories are kept first and put back after:
+    // the tests after it undo as they would have.
     static async Task TestBannersKeepRows(Node menu, NModdingScreen screen, Control content, NModMenuRow bannerRow, string name, string what)
     {
         var border = screen.GetNode<Control>("ModsBorder");
@@ -1248,11 +1310,11 @@ static partial class SelfTest
                 Tick(false);
             ListFilter.Choose(content, ListFilter.Choice.All); // a redraw, which shrinks the rows' container again, then the top
             await Wait(menu, 0.3);
-            var enteredAnew = History.Entered != history.Entered;
+            var enteredAnew = History.Steps(History.Track.List) != history.Past[History.Track.List].Count;
             History.TestPutBack(history);
             static string Said(IEnumerable<History.ModEntry> mods) => string.Join(", ", mods.Select(m => m.Id + (m.Enabled ? "" : " (off)")));
-            Check($"{what} keeping the rows in place: the saved list and Changes left as found, the page's opening state and both undo histories put back",
-                History.CurrentMods().SequenceEqual(listWas) && HistoryBar.Describe().SequenceEqual(changesWas) && History.Entered == history.Entered
+            Check($"{what} keeping the rows in place: the saved list and Changes left as found, both undo histories put back",
+                History.CurrentMods().SequenceEqual(listWas) && HistoryBar.Describe().SequenceEqual(changesWas)
                 && History.Steps(History.Track.List) == history.Past[History.Track.List].Count && History.Steps(History.Track.Order) == history.Past[History.Track.Order].Count,
                 $"entered anew by showing the page again {enteredAnew}; list {Said(History.CurrentMods())}, was {Said(listWas)}; "
                 + $"changes {string.Join(" | ", HistoryBar.Describe())}, were {string.Join(" | ", changesWas)}");
@@ -1262,4 +1324,80 @@ static partial class SelfTest
     // Everything a banner says: its text, its buttons' words and their tips.
     static List<string> BannerWords(Node? banner) => banner?.FindChildren("*", "", true, false)
         .SelectMany(n => n switch { Label label => [label.Text], Button button => new[] { button.Text, Hover.TipOf(button) }, _ => [] }).ToList() ?? [];
+
+    // The other-branch banner (Jordan, 28 Oct): on beta (made up), an enabled mod marked for stable only: a yellow banner
+    // naming it, its card naming it, #warning and Show finding it; on stable, or for both branches, none. Dismiss: gone
+    // for this set, forgotten once no enabled mod is off its branch.
+    static async Task TestBranchBanner(Node menu, NModdingScreen screen, Control content, string outDir)
+    {
+        if (Dependencies.Find("SmmTestFixes") is not { } fixes || !Copies.Ticked(fixes))
+        {
+            Results.Add("SKIP the other-branch banner: no Test Fixes on");
+            return;
+        }
+        var border = screen.GetNode<Control>("ModsBorder");
+        var box = border.GetNode<LineEdit>("SpireModManagerSearch");
+        Control? Banner() => border.GetNodeOrNull<Control>(LoadOrder.BranchName);
+        string Said() => Banner()?.FindChild("BranchWarning", true, false) is Label { } label ? label.Text : "";
+        void BannerPress(string name) => (Banner()?.FindChild(name, true, false) as BaseButton)?.EmitSignal(BaseButton.SignalName.Pressed);
+        async Task On(PlatformBranch branch, (bool, bool)? marked)
+        {
+            if (marked is { } both)
+                Tags.TestBranches["SmmTestFixes"] = both;
+            else
+                Tags.TestBranches.Remove("SmmTestFixes");
+            Tags.TestBranch = branch;
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+        }
+        var dismissedBefore = Store.Data.BranchDismissed;
+        try
+        {
+            await On(PlatformBranch.PublicBeta, (true, false));
+            var (shown, said, fill) = (Banner() is { Visible: true }, Said(), BannerFill(Banner()));
+            var card = string.Join(" | ", await BannerCard(menu, screen, Banner(), "2y-branch-banner", outDir));
+            var found = (Search.Matches(fixes, "#warning"), Search.Matches(fixes, "#\"stable only\""), Search.Matches(fixes, "#stable"), Search.Matches(fixes, "#beta"));
+            BannerPress("FilterBranchButton");
+            await Wait(menu, 0.3);
+            var show = box.Text;
+            box.Text = "";
+            box.EmitSignal(LineEdit.SignalName.TextChanged, "");
+            await Wait(menu, 0.3);
+            Check("an enabled stable-only mod on beta: a yellow banner, \"1 enabled mod is listed for stable only - on beta, it loads with an error and may not "
+                + "work\", its card naming it (by its alias, if it has one); #warning finds it, and Show (#enabled -#beta)",
+                shown && said == "1 enabled mod is listed for stable only - on beta, it loads with an error and may not work" && Yellow(fill)
+                && card.Contains("Enabled mods for another branch") && card.Contains(Store.InfoFor(fixes)?.Alias ?? "Test Fixes") && found == (true, true, true, false) && show == "#enabled -#beta",
+                $"{shown} \"{said}\" {fill}; card {card}; found {found}; Show \"{show}\"");
+            await On(PlatformBranch.Production, (true, false));
+            var onStable = Banner() != null;
+            await On(PlatformBranch.PublicBeta, (true, true));
+            var forBoth = Banner() != null;
+            await On(PlatformBranch.None, (false, true));
+            var elsewhere = Banner() != null;
+            await On(PlatformBranch.Production, (false, false));
+            var forNeither = Banner() != null;
+            Check("no other-branch banner for a stable-only mod on stable, a mod for both branches on beta, one for neither, or on a branch that's neither",
+                !onStable && !forBoth && !forNeither && !elsewhere, $"on stable {onStable}, for both {forBoth}, for neither {forNeither}, elsewhere {elsewhere}");
+            await On(PlatformBranch.Production, (false, true));
+            var betaOnly = Said();
+            BannerPress("DismissBranchButton");
+            await Wait(menu, 0.3);
+            var gone = Banner() == null;
+            CategoryList.Redraw(content);
+            await Wait(menu, 0.3);
+            var stays = Banner() == null;
+            await On(PlatformBranch.Production, null);
+            var forgotten = Store.Data.BranchDismissed == null;
+            Check("a beta-only mod on stable: the banner says so; Dismiss: gone for this set, and stays gone; forgotten once no enabled mod is off its branch",
+                betaOnly == "1 enabled mod is listed for beta only - on stable, it loads with an error and may not work" && gone && stays && forgotten,
+                $"\"{betaOnly}\"; gone {gone}, stays {stays}, forgotten {forgotten}");
+        }
+        finally
+        {
+            Tags.TestBranches.Remove("SmmTestFixes");
+            Tags.TestBranch = null;
+            Store.Data.BranchDismissed = dismissedBefore;
+            CategoryList.Redraw(content);
+        }
+    }
 }

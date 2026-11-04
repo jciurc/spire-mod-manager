@@ -33,7 +33,7 @@ static class Bmm
 
     // A type by its full name from whichever loaded assembly has it. Not AccessTools.TypeByName: when the type isn't
     // there (most players), that scans every type of every loaded mod twice, ~200 ms with 250 mods.
-    static Type? TypeNamed(string fullName)
+    internal static Type? TypeNamed(string fullName)
     {
         foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             try

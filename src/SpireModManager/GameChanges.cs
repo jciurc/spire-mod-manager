@@ -79,12 +79,72 @@ static class GameChanges
         }
     }
 
+    // Whether its pack replaces any of the game's art or sound (an image, a sound, a video, a font: Media), the Cosmetic
+    // tag's evidence beside its Workshop tags (Jordan, 25 Oct: a character reskin whose tags didn't say so). Definitive,
+    // where code changes to visuals are only inferred, so those don't count. Kept for the session per mod: every row asks
+    // at each redraw.
+    public static bool ReplacesArt(Mod mod) => Art.GetValue(mod, m => new StrongBox<bool>(ReadsAsArt(m))).Value;
+
+    static readonly ConditionalWeakTable<Mod, StrongBox<bool>> Art = new();
+    static readonly string[] Media = [".png", ".jpg", ".jpeg", ".webp", ".svg", ".ogg", ".wav", ".mp3", ".ogv", ".ttf", ".otf"];
+
+    // A game file that is art or sound, by its extension ("images/ui/top_panel/x.png"; not a scene or a script).
+    public static bool IsArt(string path) => Media.Any(ext => path.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
+
+    static bool ReadsAsArt(Mod mod)
+    {
+        try
+        {
+            return ReplacedFiles(mod).Any(IsArt);
+        }
+        catch (Exception)
+        {
+            return false; // what it ships can't be read: For warns once, when its panel or search asks
+        }
+    }
+
     // ---- The game's files
 
-    // The game's own pack beside its executable, read once; empty if it's not there (a pack inside the executable).
-    static HashSet<string>? _gamePaths;
-    static HashSet<string> GamePaths() => _gamePaths ??= Path.Combine(Path.GetDirectoryName(OS.GetExecutablePath()) ?? "", "SlayTheSpire2.pck") is var pack
-        && File.Exists(pack) ? [.. PackPaths(pack)] : [];
+    // The game's own pack beside its executable, read once; empty if it's not there (a pack inside the executable). A
+    // caller while Warm's worker reads it waits for that read rather than starting another.
+    static Lazy<HashSet<string>>? _gamePaths;
+    static HashSet<string> GamePaths() => GamePack().Value;
+
+    static Lazy<HashSet<string>> GamePack()
+    {
+        var pack = Path.Combine(Path.GetDirectoryName(OS.GetExecutablePath()) ?? "", "SlayTheSpire2.pck");
+        return _gamePaths ??= new(() => File.Exists(pack) ? [.. PackPaths(pack)] : []);
+    }
+
+    // From the main menu on, the game's pack and each mod's are read on a worker, so the Cosmetic tag (ReplacesArt) is
+    // known before the page's text is shaped ahead (Prewarm) or the page opens. On the menu's thread the game's pack
+    // made a 157 ms frame there, 80 ms before (Copilot on #322). Only files are read off the main thread: the mods'
+    // list and the game's path are taken here. Never throws.
+    public static void Warm(IEnumerable<Mod> mods)
+    {
+        try
+        {
+            var list = mods.ToList();
+            var game = GamePack();
+            Task.Run(() =>
+            {
+                try
+                {
+                    _ = game.Value;
+                    foreach (var mod in list)
+                        ReplacesArt(mod);
+                }
+                catch (Exception e)
+                {
+                    Log.Warn($"[{ModEntry.ModId}] Could not read the mods' files ahead (they're read when the page asks): {e.Message}");
+                }
+            });
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[{ModEntry.ModId}] Could not start reading the mods' files ahead (they're read when the page asks): {e.Message}");
+        }
+    }
 
     // The assets a mod's packs have at the game's own paths ("images/ui/hands/hand_regent.png", from its .import).
     static List<string> ReplacedFiles(Mod mod)

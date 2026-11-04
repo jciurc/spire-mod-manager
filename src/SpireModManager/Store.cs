@@ -43,11 +43,16 @@ internal class StoreData
     public bool ManagersWarningDismissed { get; set; }
     // The same-id banner dismissed, for this set of copies on (Copies.Signature): another set shows it again.
     public string? SameIdDismissed { get; set; }
+    // The other-branch banner dismissed, for this set of mods on (Copies.Signature): another set shows it again.
+    public string? BranchDismissed { get; set; }
     // Where the player moved the main menu button (top-left, in the game's 1920x1080 frame); null: the corner.
     public ScreenPoint? MenuButtonAt { get; set; }
     public string? ImportedFrom { get; set; }
     // The share dialog's tick boxes, kept across launches while its Remember selection is ticked; null: the defaults.
     public ShareChoice? ShareChoices { get; set; }
+
+    // A copy that shares everything below the top level (Store.EditsJson clears its view state).
+    public StoreData Shallow() => (StoreData)MemberwiseClone();
 }
 
 internal record ShareChoice(bool Category, bool Disabled, bool Alias, bool Notes);
@@ -56,6 +61,8 @@ internal class Category
 {
     public string Name { get; set; } = "";
     public bool Collapsed { get; set; }
+
+    public Category Shallow() => (Category)MemberwiseClone();
 }
 
 internal class ModInfo
@@ -128,6 +135,12 @@ internal static class Store
 
     // Self-test: a session that can't save our data, or one that can again.
     public static void TestReadOnly(bool readOnly) => _readOnly = readOnly;
+
+    // Self-test: our data swapped for another (a big list's, and back), unsaved.
+    public static void TestSet(StoreData data) => _data = data;
+
+    // Self-test: data as the file has it.
+    public static string TestJson(StoreData data) => JsonSerializer.Serialize(data, Json);
 #endif
 
     // The mod's data folder (known from Init on): manager.json, backups, drop-in translations and the launch record.
@@ -466,27 +479,27 @@ internal static class Store
         Save();
     }
 
-    // Our data minus view state (views, collapsed categories, dismissed banners, the share dialog's kept tick boxes):
-    // what undo compares and restores.
+    // Our data minus view state (views, collapsed categories, dismissed banners, the share dialog's kept tick boxes, the
+    // main menu button's place: a layout choice, not a change to the mods): what undo compares and restores.
+    // Written straight from a shallow copy: one pass over the data, as cheap as checking it against the last one asked
+    // (asked several times per change: undo history, the changes bar, its list). The copy shares the data below the top
+    // level, so only what's replaced here is changed: nothing in our data is.
     public static string EditsJson()
     {
-        var json = JsonSerializer.Serialize(Data, Json);
-        if (_edits is { } last && last.Data == json)
-            return last.Edits;
-        var copy = JsonSerializer.Deserialize<StoreData>(json, Json) ?? new StoreData();
+        var data = Data;
+        var copy = data.Shallow();
         copy.VanillaView = copy.LoadOrderView = copy.UncategorizedCollapsed = copy.ManagersWarningDismissed = false;
         copy.ShareChoices = null;
-        copy.SameIdDismissed = null;
-        foreach (var category in copy.Categories)
-            category.Collapsed = false;
-        var edits = JsonSerializer.Serialize(copy, Json);
-        _edits = (json, edits);
-        return edits;
+        copy.SameIdDismissed = copy.BranchDismissed = null;
+        copy.MenuButtonAt = null;
+        copy.Categories = [.. data.Categories.Select(category =>
+        {
+            var open = category.Shallow();
+            open.Collapsed = false;
+            return open;
+        })];
+        return JsonSerializer.Serialize(copy, Json);
     }
-
-    // The last EditsJson and the data it was made from: asked several times per change (undo history, the changes bar,
-    // its list), it's only made again when the data has changed.
-    static (string Data, string Edits)? _edits;
 
     // A copy of our data to try a change on.
     public static StoreData Clone(StoreData data) => JsonSerializer.Deserialize<StoreData>(JsonSerializer.Serialize(data, Json), Json) ?? new StoreData();
@@ -506,12 +519,80 @@ internal static class Store
         var now = Data;
         (restored.VanillaView, restored.LoadOrderView, restored.UncategorizedCollapsed, restored.ManagersWarningDismissed, restored.ShareChoices) =
             (now.VanillaView, now.LoadOrderView, now.UncategorizedCollapsed, now.ManagersWarningDismissed, now.ShareChoices);
-        restored.SameIdDismissed = now.SameIdDismissed;
+        (restored.SameIdDismissed, restored.BranchDismissed, restored.MenuButtonAt) = (now.SameIdDismissed, now.BranchDismissed, now.MenuButtonAt);
         foreach (var category in restored.Categories)
             category.Collapsed = now.Categories.FirstOrDefault(c => c.Name == category.Name)?.Collapsed ?? false;
         _data = restored;
         Save();
     }
+
+    // Puts back from saved edits (launch's, for Revert all) only what Changes counts in our data, the rest kept as it is
+    // now (Jordan, 23 Oct): each copy's tick (copies_off, and our record of the copies it's read with); each mod's
+    // category, alias, notes and tags; the profiles by name, and the active one. A profile added since goes, one deleted
+    // since comes back as it was then, one renamed since takes its name then; each keeps its saved list (Save) and its
+    // unsaved edit. The categories and their order, and the view state, stay. What a detail put back needs comes back
+    // too: a category deleted since that a mod is back in, at its place then (after the one before it then).
+    public static void RestoreCounted(string json)
+    {
+        var then = JsonSerializer.Deserialize<StoreData>(json, Json) ?? new StoreData();
+        var restored = Clone(Data);
+        (restored.CopiesOff, restored.CopyPicks, restored.Copies, restored.Mods) = (then.CopiesOff, then.CopyPicks, then.Copies, then.Mods);
+        (restored.Profiles, restored.ActiveProfile) = (ProfilesAsThen(then.Profiles, restored.Profiles), then.ActiveProfile);
+        var wanted = restored.Mods.Values.Select(m => m.Category).OfType<string>().ToHashSet();
+        for (var i = 0; i < then.Categories.Count; i++)
+            if (then.Categories[i] is { Name: var name } && wanted.Contains(name) && !restored.Categories.Any(c => c.Name == name))
+            {
+                var after = then.Categories.Take(i).Select(c => restored.Categories.FindIndex(r => r.Name == c.Name)).LastOrDefault(at => at >= 0, -1);
+                restored.Categories.Insert(after + 1, new Category { Name = name });
+            }
+        _data = restored;
+        Save();
+    }
+
+    // The profiles then, as Changes tells them (by name): each one then that's here now, by its id (renamed since) or
+    // else its name, as it is now under its name then; each one then that isn't, as it was then, at its place then; the
+    // rest (added since) gone. Ids first, so a profile renamed onto a name another had then isn't taken for that one.
+    static List<Profile> ProfilesAsThen(List<Profile> then, List<Profile> now)
+    {
+        var here = new Dictionary<Profile, Profile>();
+        foreach (var match in new Func<Profile, Profile, bool>[] { (was, p) => was.Id != null && p.Id == was.Id, (was, p) => p.Name == was.Name })
+            foreach (var was in then.Where(p => !here.ContainsKey(p)))
+                if (now.FirstOrDefault(p => match(was, p) && !here.ContainsValue(p)) is { } found)
+                    here[was] = found;
+        var kept = now.Where(here.ContainsValue).ToList();
+        foreach (var (was, found) in here)
+            found.Name = was.Name;
+        for (var i = 0; i < then.Count; i++)
+            if (!here.ContainsKey(then[i]))
+            {
+                var after = then.Take(i).Select(p => kept.IndexOf(here.GetValueOrDefault(p) ?? p)).LastOrDefault(at => at >= 0, -1);
+                kept.Insert(after + 1, then[i]);
+            }
+        return kept;
+    }
+
+    // What Changes counts in saved edits (RestoreCounted's parts: the ticks and record, each mod's details, the profiles'
+    // names, the active one), in a fixed order: the same for the same counts whatever else changed (Revert all's button,
+    // History.AtLaunch). The last two asked are kept: the button asks for now's and Revert all's on every change.
+    public static string Counted(string json)
+    {
+        foreach (var (asked, made) in _counted)
+            if (asked == json)
+                return made;
+        var data = JsonSerializer.Deserialize<StoreData>(json, Json) ?? new StoreData();
+        var counted = JsonSerializer.Serialize(new
+        {
+            data.CopiesOff, data.CopyPicks,
+            Copies = data.Copies?.OrderBy(p => p.Key, StringComparer.Ordinal).ToList(),
+            Mods = data.Mods.OrderBy(p => p.Key, StringComparer.Ordinal).ToList(),
+            Profiles = data.Profiles.Select(p => p.Name).Order(StringComparer.Ordinal).ToList(),
+            data.ActiveProfile,
+        }, Json);
+        _counted = [(json, counted), .. _counted.Take(1)];
+        return counted;
+    }
+
+    static (string Json, string Counted)[] _counted = [];
 
     // The first save of each session first copies the previous file into backups/ (one try a session).
     static void Write(StoreData data)

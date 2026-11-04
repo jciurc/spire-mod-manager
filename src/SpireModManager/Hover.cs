@@ -11,8 +11,9 @@ namespace SpireModManager;
 // - leaving, it goes after WindDown (Instant ones at once), so a quick wobble off the edge keeps it;
 // - one card at a time: a newer one closes the one before;
 // - unless its caller places it, it opens below right of the mouse, off its trigger, or above it (left of the mouse)
-//   where there's no room below (right): never over the trigger and the mouse while there's room on the other side. A
-//   picture card mirrors it across: below left of the mouse, turning right of it (or above) where there's no room.
+//   where there's no room below (right), or near the screen's bottom (right) edge: never over the trigger and the mouse
+//   while there's room on the other side. A picture card mirrors it across: below left of the mouse, turning right of
+//   it (or above) where there's no room.
 static class Hover
 {
     public const double Delay = 0.4, Grace = 0.25, WindDown = 0.02, SlowDelay = 1.0;
@@ -22,6 +23,8 @@ static class Hover
     // How far above and below the mouse a card keeps off its trigger: all of a button or a row (and a note beside it),
     // only the part near the mouse of anything taller.
     const float Reach = 100;
+    // The part of the screen at its bottom and right edges where a card opens above and left of the mouse.
+    const float EdgeZone = 0.15f;
 
     public enum Timing { Normal, Instant, Slow, Plain, Late }
 
@@ -286,10 +289,16 @@ static class Hover
             {
                 // Off the trigger on its own side; then, short of room, above it rather than kept on screen over it and the
                 // mouse (or below, for one above it), and left of the mouse by as much as it was right (or the reverse).
+                // With the mouse in the screen's last EdgeZone at the bottom (right), it opens above (left) to begin with,
+                // room or not (Jordan, 28 Oct).
                 var (over, under) = (clear.Position.Y - Gap - size.Y, clear.End.Y + Gap);
-                position.Y = above ? Math.Min(position.Y, over) : Math.Max(position.Y, under);
-                position.Y = Turned(position.Y, size.Y, screen.Y, above ? under : over);
-                position.X = Turned(position.X, size.X, screen.X, 2 * clear.GetCenter().X - position.X - size.X);
+                var mouse = clear.GetCenter();
+                var up = above || mouse.Y > screen.Y * (1 - EdgeZone);
+                position.Y = up ? Math.Min(above ? position.Y : over, over) : Math.Max(position.Y, under);
+                position.Y = Turned(position.Y, size.Y, screen.Y, up ? under : over);
+                if (mouse.X > screen.X * (1 - EdgeZone) && position.X + size.X / 2 > mouse.X)
+                    position.X = 2 * mouse.X - position.X - size.X;
+                position.X = Turned(position.X, size.X, screen.X, 2 * mouse.X - position.X - size.X);
             }
             panel.Position = new Vector2(Math.Clamp(position.X, 0, Math.Max(0, screen.X - size.X)), Math.Clamp(position.Y, 0, Math.Max(0, screen.Y - size.Y)));
         }

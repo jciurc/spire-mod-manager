@@ -3,6 +3,50 @@
 What changed in each Workshop release, for players. Each version's first line is its Workshop change note
 (`changeNote` in `workshop/workshop.json`), word for word.
 
+## 0.2.1 (2026-11-04)
+
+0.2.1:
+- info panel now contains a Settings button that opens the mod's own settings page if one was found
+- when a mod prevents the game from starting, an option to disable the suspect mods and restart is available
+- a mod installed both locally and from the workshop no longer move to the end of the load order on each launch - copies now move together in load order
+- "Revert all" button now reverts to exactly how mods were configured at launch, including load order. This should prevent the messaging instructing to restart the game even after reverting
+- slight info panel rearrangement
+- the info panel lists requirements from a mod's Workshop page under Dependencies
+- a warning banner shows when enabled mods are listed for the other Steam branch only; their tags now read "Stable only" or "Beta only"
+- the "mods were disabled after a failed start" banner has a Show button
+- added loading indicator if it takes longer than 15 seconds to start the game
+- hover cards near the bottom or right edge of the screen open above or to the left
+- choosing a category in the info panel with several mods selected moves all of them
+- saving an alias, tags or notes is faster with large mod lists
+- updated crash screen wording
+- fixed: typing in an info panel field, then selecting another mod (e.g. with Go to), could save the text over that mod's value
+- info panel now scrolls everything below header, instead of only the mod description
+
+- The info panel's Settings button, beside Open Folder, opens a mod's own settings page where RitsuLib or BaseLib keeps
+  one for it (a mod's own RitsuLib page first), and the page you came from stays as you left it. For a mod with none
+  it's greyed out, its tip "No settings page found for this mod"; a page that doesn't open greys it for the session,
+  with "Settings page couldn't be opened - see game log for more details".
+- When a mod stops the game from starting, our dialog takes the place of the game's, its message first. It names the mod
+  most likely behind it, from the error, Harmony's failed patches and Mod Doctor's findings where it's installed, saying
+  "most likely" where the evidence is weaker, and offers Disable <mod> and restart (the mods that need it are disabled
+  with it), or Restore of the last working setup when that can help; after several failed starts in a row, Disable all
+  mods and restart. The next main menu says what was disabled and why, with Reenable, and a yellow banner on the page
+  lists it meanwhile, with a Show button. Restore and profiles keep a mod disabled this way disabled until you reenable
+  it.
+- A mod installed both locally and from the Workshop keeps its place in the load order. The copy that doesn't load no
+  longer sends the mod to the end at every launch, so a mod that needs it is no longer blocked at every launch either:
+  after one launch, it loads. A mod that kept sliding to the end stays where it is now; drag it once to put it anywhere,
+  and it stays there.
+- In Load Order, a mod installed more than once is one place in the order, as the game loads it: its rows sit together,
+  and dragging any of them, Move up or down, or a selection moves them all. Up and Down step past a whole mod, and a
+  drop never lands between another mod's copies. Dropping a copy among its own rows changes the order of its copies for
+  this session; for copies from both sources, the next launch lists the one that loads first again. Fix now and Auto
+  sort keep a mod's rows together at the copy that loads, and move a mod whose chosen copy can't load where it is (it
+  needs a mod below it) after that mod.
+- Revert all puts back everything the bar counts, load order included, the way it was when the game started (a mod
+  installed since stays installed, disabled), so Changes reads 0 after it.
+- The info panel lists Modified content right after Subscribers, then the Workshop tags, then Other keywords.
+
 ## 0.2.0 (2026-10-24)
 
 0.2.0:
