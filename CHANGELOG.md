@@ -3,6 +3,14 @@
 What changed in each Workshop release, for players. Each version's first line is its Workshop change note
 (`changeNote` in `workshop/workshop.json`), word for word.
 
+## 0.2.2 (2026-11-04)
+
+0.2.2:
+- added an Import button to the left of the profile picker in the main list
+- hotkeys: Enter opens the highlighted mod row, Space selects or deselects it
+- faster switching between the main list, Load Order and Vanilla View
+- faster list redraws when searching, folding a category or moving a mod to another category
+
 ## 0.2.1 (2026-11-04)
 
 0.2.1:
