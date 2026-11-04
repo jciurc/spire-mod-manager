@@ -261,6 +261,7 @@ static partial class SelfTest
             await Step(() => TestRedrawCost(menu, screen, content));
             await Step(() => TestManyMods(menu, screen, content));
             await Step(() => TestSwitchWork(menu, screen));
+            await Step(() => TestHeaderReuse(menu, screen, content));
             await Step(() => TestSaveCost(menu, screen, content));
             await Step(() => TestNewMod(menu, screen, content, outDir));
             await Step(() => TestWorkshopTitles(menu, screen, content, outDir));

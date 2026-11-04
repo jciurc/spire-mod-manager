@@ -16,6 +16,10 @@ record MenuItem(string Label, Action? OnSelect, bool Checked = false, bool Disab
     Texture2D? Icon = null, bool TipMarkup = false)
 {
     public static MenuItem Heading(string label) => new(label, null);
+
+    // What an inline button for it shows (Menus.InlineButton): its words, state, look and tip. One that shows the same
+    // is kept from redraw to redraw, given the new action (Menus.Rebind).
+    public string Shows() => $"{Label}/{Disabled}/{Flat}/{Tip}/{TipMarkup}";
 }
 
 static class Menus
@@ -284,20 +288,23 @@ static class Menus
     {
         var box = new HBoxContainer { Name = name, MouseFilter = Control.MouseFilterEnum.Ignore, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
         box.AddThemeConstantOverride(Separation, 4);
-        foreach (var item in items)
-            if (item.OnSelect is { } action)
-            {
-                // A press runs the button's action as it is then: Refill can give it another.
-                var does = new StrongBox<Action?>(action);
-                var button = SmallButton(item.Label, () => does.Value?.Invoke(), item.Disabled);
-                Pressing.Add(button, does);
-                Hover.Tip(button, item.Tip, markup: item.TipMarkup);
-                if (item.Flat)
-                    Flatten(button);
-                button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
-                box.AddChild(button);
-            }
+        foreach (var item in items.Where(i => i.OnSelect != null))
+            box.AddChild(InlineButton(item));
         return box;
+    }
+
+    // One of those buttons, for an item with an action. A press runs the button's action as it is then: Refill and
+    // Rebind can give it another.
+    public static Button InlineButton(MenuItem item)
+    {
+        var does = new StrongBox<Action?>(item.OnSelect);
+        var button = SmallButton(item.Label, () => does.Value?.Invoke(), item.Disabled);
+        Pressing.Add(button, does);
+        Hover.Tip(button, item.Tip, markup: item.TipMarkup);
+        if (item.Flat)
+            Flatten(button);
+        button.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+        return button;
     }
 
     static readonly ConditionalWeakTable<Button, StrongBox<Action?>> Pressing = new();
