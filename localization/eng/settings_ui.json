@@ -261,6 +261,8 @@
   "SPIRE_MOD_MANAGER.WORKSHOP_TAGS": "Workshop tags",
   "SPIRE_MOD_MANAGER.OTHER_KEYWORDS": "Other keywords",
   "SPIRE_MOD_MANAGER.OTHER_KEYWORDS_TIP": "Searchable keywords added by Spire Mod Manager to help filter mods by their state",
+  "SPIRE_MOD_MANAGER.MISSING_PAGE_TIP": "Not installed. Click to open its Workshop page.",
+  "SPIRE_MOD_MANAGER.MISSING_SEARCH_TIP": "Not installed. Click to search the Workshop for it.",
   "SPIRE_MOD_MANAGER.TAGS_HINT": "Custom tags separated by commas",
   "SPIRE_MOD_MANAGER.TAG_GAMEPLAY": "Gameplay",
   "SPIRE_MOD_MANAGER.TAG_LIBRARY": "Library",

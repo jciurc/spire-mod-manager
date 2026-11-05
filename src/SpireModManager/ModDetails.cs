@@ -259,10 +259,10 @@ static class ModDetails
                 Search.ByTag(container, tag[5..], Input.IsKeyPressed(Key.Shift)); // #tag, the mods with it
             else if (meta.AsString() == ModifiedContent.Meta && ShownChanges.TryGetValue(id, out var shown))
                 ModifiedContent.Show(container, shown.Mod, shown.Changes);
-            else if (meta.AsString() is { } page && page.StartsWith(ProfileCsv.WorkshopPage))
-                OS.ShellOpen(page); // a required Workshop item that isn't installed: its page
+            else if (meta.AsString() is { } page && (page.StartsWith(ProfileCsv.WorkshopPage) || page.StartsWith(WorkshopSearch)))
+                OS.ShellOpen(page); // a required Workshop item or dependency that isn't installed: its page, or the search for it
         };
-        Hover.WatchLinks(description, Hover.TipName, KeywordsTip, width: 320);
+        Hover.WatchLinks(description, Hover.TipName, meta => KeywordsTip(meta) ?? MissingTip(meta), width: 320);
         Hover.WatchLinks(description, "SpireModManagerTagCard",
             meta => Searches(meta) ? Tags.Hint(Menus.Text("SPIRE_MOD_MANAGER.SEARCH_CLICK_TIP")) : null, width: 320);
         Hover.WatchLinks(description, ModifiedContent.CardName, meta => meta == ModifiedContent.Meta && !Store.Data.VanillaView
@@ -336,11 +336,17 @@ static class ModDetails
 
         // What it needs, and what needs it: its manifest's dependencies, then what its Workshop page requires beyond them,
         // marked (Jordan, 28 Oct: "RitsuLib (Requirement from workshop)"; the game doesn't check those). One not installed
-        // opens its Workshop page.
+        // opens its Workshop page. A dependency not installed, "(not installed)" after it, opens the required item that is
+        // it (DependencyItem), or else the Workshop's search for its id.
+        var workshopRequired = WorkshopRequired(mod);
         string Link(string d) => $"[url=mod:{d}][color={ModLinkHex}]{Escape(Dependencies.Find(d)?.manifest?.name ?? d)}[/color][/url]";
+        string Need(string d) => Dependencies.Find(d) != null ? Link(d)
+            : $"[url={(DependencyItem(d, workshopRequired) is { } item ? ProfileCsv.WorkshopLink(item) : WorkshopSearchLink(d))}]"
+                + $"[color={ModLinkHex}]{Escape(d)}[/color][/url] [color={Problem}]{Escape(Menus.Text("SPIRE_MOD_MANAGER.DEP_MISSING"))}[/color]";
         string FromWorkshop(string link) => Menus.Format("SPIRE_MOD_MANAGER.WORKSHOP_REQUIREMENT", ("mod", link));
         var needs = Dependencies.Of(mod);
-        var required = WorkshopRequired(mod).Where(r => r.Id == null || !needs.Contains(r.Id)).Select(r => FromWorkshop(r.Id is { } id ? Link(id)
+        var placed = needs.Where(d => Dependencies.Find(d) == null).Select(d => DependencyItem(d, workshopRequired)).OfType<ulong>().ToHashSet();
+        var required = workshopRequired.Where(r => r.Id == null ? !placed.Contains(r.Item) : !needs.Contains(r.Id)).Select(r => FromWorkshop(r.Id is { } id ? Link(id)
             : $"[url={ProfileCsv.WorkshopLink(r.Item)}][color={ModLinkHex}]{Escape(WorkshopInfo.Title(r.Item) ?? r.Item.ToString())}[/color][/url]")).ToList();
         var ownId = mod.manifest?.id ?? "";
         var neededBy = ModManager.Mods.Where(m => m != mod && Dependencies.Of(m).Contains(ownId))
@@ -349,7 +355,7 @@ static class ModDetails
                 && WorkshopRequired(m).Any(r => r.Id == ownId))
             .Select(m => m.manifest?.id ?? "").Distinct().ToList();
         if (needs.Count > 0 || required.Count > 0)
-            Fact("SPIRE_MOD_MANAGER.DEPENDENCIES", string.Join(", ", needs.Select(Link).Concat(required)));
+            Fact("SPIRE_MOD_MANAGER.DEPENDENCIES", string.Join(", ", needs.Select(Need).Concat(required)));
         if (neededBy.Count > 0 || requiredBy.Count > 0)
             Fact("SPIRE_MOD_MANAGER.NEEDED_BY", string.Join(", ", neededBy.Select(Link).Concat(requiredBy.Select(id => FromWorkshop(Link(id))))));
         return text.ToString().TrimEnd();
@@ -359,11 +365,31 @@ static class ModDetails
     static List<(ulong Item, string? Id)> WorkshopRequired(Mod mod) =>
         [.. (WorkshopInfo.For(mod)?.Required ?? []).Select(item => (item, ModManager.Mods.Union(Installed.Mods).FirstOrDefault(m => Compat.WorkshopId(m) == item)?.manifest?.id))];
 
+    // The required item that is a dependency not installed: one not installed whose title is its id, ignoring case, spaces
+    // and punctuation ("BaseLib" is BaseLib's). Never by count alone: a stale or unrelated item would be the wrong page.
+    public static ulong? DependencyItem(string id, List<(ulong Item, string? Id)> required)
+    {
+        static string Plain(string s) => new([.. s.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant)]);
+        var plain = Plain(id);
+        return plain.Length == 0 ? null
+            : required.Where(r => r.Id == null && WorkshopInfo.Title(r.Item) is { } title && Plain(title) == plain).Select(r => (ulong?)r.Item).FirstOrDefault();
+    }
+
+    // The Workshop's search for a mod id, this game's items: a dependency with no item of its own to open.
+    public const string WorkshopSearch = "https://steamcommunity.com/workshop/browse/?appid=2868840&searchtext=";
+
+    public static string WorkshopSearchLink(string id) => WorkshopSearch + Uri.EscapeDataString(id);
+
     // Other keywords' term: its tip says what they are.
     public const string KeywordsTipMeta = "keywords";
 
     public static string? KeywordsTip(string meta) => meta == KeywordsTipMeta && !Store.Data.VanillaView
         ? Escape(Menus.Text("SPIRE_MOD_MANAGER.OTHER_KEYWORDS_TIP")) : null;
+
+    // A mod not installed: where its link goes, its Workshop page or the search for it.
+    public static string? MissingTip(string meta) => Store.Data.VanillaView ? null
+        : meta.StartsWith(ProfileCsv.WorkshopPage) ? Escape(Menus.Text("SPIRE_MOD_MANAGER.MISSING_PAGE_TIP"))
+        : meta.StartsWith(WorkshopSearch) ? Escape(Menus.Text("SPIRE_MOD_MANAGER.MISSING_SEARCH_TIP")) : null;
 
     // The head's facts: author (click: search for their mods), last update (and its change notes), game versions.
     static string HeadFacts(Mod mod)

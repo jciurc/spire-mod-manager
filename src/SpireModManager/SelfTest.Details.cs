@@ -839,10 +839,37 @@ static partial class SelfTest
                 .FirstOrDefault(l => l.StartsWith(Menus.Text("SPIRE_MOD_MANAGER.NEEDED_BY") + ": ")) ?? "";
             Check("the required mod's panel: Required for: Workshop Test (Requirement from workshop)",
                 forLine == $"{Menus.Text("SPIRE_MOD_MANAGER.NEEDED_BY")}: Workshop Test (Requirement from workshop)", forLine);
+
+            // Dependencies that aren't installed (notes#31): "(not installed)" after each; one whose id is a required
+            // item's title (ignoring case, spaces and punctuation) opens that item's page and isn't listed again as a
+            // requirement; one with none opens the Workshop's search for its id, escaped. Their tips say which.
+            WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now, DateTime.Now, [], [], 0, null) { Required = [43, 99001, 99002] });
+            WorkshopInfo.TestTitle(99002, "Smm Missing-Lib");
+            if (mod.manifest is { } needing)
+                needing.dependencies = [new ModDependency("SmmMissingLib"), new ModDependency("Smm Nowhere&x")];
+            info.Fill(mod);
+            needs = PanelScroll.Description(info);
+            needsLine = needs.GetParsedText().Split('\n').FirstOrDefault(l => l.StartsWith(Menus.Text("SPIRE_MOD_MANAGER.DEPENDENCIES") + ": ")) ?? "";
+            var search = ModDetails.WorkshopSearch + "Smm%20Nowhere%26x";
+            Check("dependencies not installed: each \"(not installed)\"; the one titled on the Workshop its page, not listed again; the other "
+                + "the Workshop's search for its id, escaped",
+                needsLine == "Dependencies: SmmMissingLib (not installed), Smm Nowhere&x (not installed), Workshop Lib (Requirement from workshop), "
+                    + "Missing Lib (Requirement from workshop)"
+                && needs.Text.Contains($"[url={ProfileCsv.WorkshopLink(99002)}]") && needs.Text.Contains($"[url={search}]")
+                && !needs.Text.Contains("[url=mod:SmmMissingLib]"), $"{needsLine} / {needs.Text}");
+            Check("their tips: the Workshop page, the search",
+                ModDetails.MissingTip(ProfileCsv.WorkshopLink(99002)) == Menus.Text("SPIRE_MOD_MANAGER.MISSING_PAGE_TIP")
+                && ModDetails.MissingTip(search) == Menus.Text("SPIRE_MOD_MANAGER.MISSING_SEARCH_TIP") && ModDetails.MissingTip("mod:SmmMissingLib") == null);
+            Check("a required item with another title isn't the dependency, even when it's the only one not installed",
+                ModDetails.DependencyItem("SmmOtherLib", [(99001, null)]) == null && ModDetails.DependencyItem("missing_lib", [(99001, null)]) == 99001
+                && ModDetails.DependencyItem("SmmWorkshopLib", [(43, "SmmWorkshopLib")]) == null);
         }
         finally
         {
+            if (mod.manifest is { } needing)
+                needing.dependencies = null;
             WorkshopInfo.TestTitle(99001, null);
+            WorkshopInfo.TestTitle(99002, null);
             Installed.Forget(lib);
         }
         WorkshopInfo.TestSet(42, null);
