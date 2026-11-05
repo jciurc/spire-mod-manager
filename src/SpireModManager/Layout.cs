@@ -662,12 +662,48 @@ static class Layout
         TestFitting?.Invoke(label);
 #endif
         if (now)
-            label.Call(AdjustFontSize);
+            Fit(label);
         else
-            label.CallDeferred(AdjustFontSize);
+            Callable.From(() =>
+            {
+                if (GodotObject.IsInstanceValid(label))
+                    Fit(label);
+            }).CallDeferred();
     }
 
-    static readonly StringName LastSetSize = "_lastSetSize", LastAdjustedSize = "_lastAdjustedSize", AdjustFontSize = "AdjustFontSize";
+    // The game's auto-size, remembered. It measures the text at one size or more, and a view switch changes every row
+    // title's box and back again, though the same text in the same box (font, size limits alike) always fits the same.
+    // Fitted before: the size it picked, set as its own SetFontSize sets one (restyled only if it changed), and the box
+    // marked as fitted, as it marks it. Shared by every label Refit fits; it starts afresh past a few thousand.
+    static void Fit(MegaRichTextLabel label)
+    {
+        if (!label.AutoSizeEnabled) // (turned off since a deferred fit was asked for)
+            return;
+        var box = label.Size;
+        var key = new FitKey(label.Text, box, label.MinFontSize, label.MaxFontSize, label.IsHorizontallyBound, label.IsVerticallyBound,
+            label.GetThemeFont(NormalFont, RichText).GetInstanceId(), label.GetThemeConstant(LineSpacing, RichText));
+        if (Fits.TryGetValue(key, out var size))
+        {
+            label.Set(LastAdjustedSize, box);
+            label.Call(SetFontSize, size);
+            return;
+        }
+        label.Set(LastAdjustedSize, -Vector2.One); // no box: set back to the label's own only if it fits
+        label.Call(AdjustFontSize);
+#if DEVTOOLS
+        TestMeasured++;
+#endif
+        if ((Vector2)label.Get(LastAdjustedSize) != box) // it didn't fit (already fitting, or nothing to measure with)
+            return;
+        if (Fits.Count >= 4096)
+            Fits.Clear();
+        Fits[key] = (int)label.Get(LastSetSize);
+    }
+
+    readonly record struct FitKey(string Text, Vector2 Box, int Min, int Max, bool Wide, bool Tall, ulong Font, int LineSpacing);
+    static readonly Dictionary<FitKey, int> Fits = [];
+    static readonly StringName LastSetSize = "_lastSetSize", LastAdjustedSize = "_lastAdjustedSize", AdjustFontSize = "AdjustFontSize",
+        SetFontSize = "SetFontSize", LineSpacing = "line_spacing", RichText = "RichTextLabel";
     // Made once, as every row title asks for both each redraw (a text passed as one is converted anew each time).
     static readonly StringName NormalFontSize = "normal_font_size", BoldFontSize = "bold_font_size", NormalFont = "normal_font";
     static bool? _refits;
@@ -678,6 +714,9 @@ static class Layout
 #if DEVTOOLS
     // Self-test: told of each label FontSize writes a size to or Refit fits again.
     public static Action<MegaRichTextLabel>? TestFitting { get; set; }
+
+    // Self-test: how many times the game's auto-size measured a text (Fit had no size for it).
+    public static int TestMeasured { get; private set; }
 #endif
 
     // Finds Refit's members (AdjustFontSize by its signature); a lookup that throws counts as not found.
@@ -688,7 +727,7 @@ static class Layout
         {
             var type = typeof(MegaRichTextLabel);
             if (AccessTools.Field(type, "_lastSetSize")?.FieldType == typeof(int) && AccessTools.Field(type, "_lastAdjustedSize")?.FieldType == typeof(Vector2)
-                && AccessTools.Method(type, "AdjustFontSize", []) != null)
+                && AccessTools.Method(type, "AdjustFontSize", []) != null && AccessTools.Method(type, "SetFontSize", [typeof(int)]) != null)
                 return true;
             Log.Warn($"[{ModEntry.ModId}] {missing}");
         }

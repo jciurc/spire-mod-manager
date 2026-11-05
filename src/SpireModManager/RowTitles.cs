@@ -87,7 +87,7 @@ static class RowTitles
                 var marked = !Store.Data.LoadOrderView && info?.Notes is { Length: > 0 };
                 // Fitted once this redraw has placed the title (Load Order moves it right).
                 var shown = row;
-                Callable.From(() => Fit(shown, name, info?.Alias, marked)).CallDeferred();
+                Callable.From(() => Costs.Time("titles fitted", () => Fit(shown, name, info?.Alias, marked))).CallDeferred();
             }
         }
         MarkChanged(rows, vanilla);

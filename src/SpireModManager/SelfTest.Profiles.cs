@@ -1028,7 +1028,13 @@ static partial class SelfTest
         Profiles.SwitchTo(other, screen);
         await Wait(menu, 0.3);
         var otherStates = ModListState();
-        await Choose("Import profile");
+        // This one through the bar's Import button, first on the bar, left of Profile:
+        var importButton = bar.FindChild("ImportButton", true, false) as Button;
+        Check("the bar's Import button comes first, left of the Profile: caption", importButton is { Visible: true, Text: "Import" }
+            && importButton.GetIndex() == 0 && importButton.GetParent().GetChild(1) is Label { Text: "Profile:" }, importButton?.GetParent()?.GetChild(1)?.Name ?? "no button");
+        if (importButton != null)
+            await RealClick(menu, importButton);
+        await Wait(menu, 0.3);
         await Paste(csv);
         Check("Import profile: our own list previews the new profile and what it enables", Dialog() != null && Status() == ""
             && Preview().Contains("Creates the profile Imported profile:") && Preview().Contains("Mods enabled ") && !Preview().Contains("Not installed"), Preview());

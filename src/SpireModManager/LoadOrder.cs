@@ -219,14 +219,16 @@ static class LoadOrder
         var ordered = Ordered(rows, r => r.Mod);
         // Where each one was at launch, among the copies installed now (1-based).
         var launch = LaunchPlaces(mods);
+        Costs.Lap("load order: launch places");
+        ChildOrder.Place(content, ordered);
         for (var i = 0; i < ordered.Count; i++)
         {
             var row = ordered[i];
-            content.MoveChild(row, i);
             row.Visible = true;
             Decorate(content, row, i + 1, row.Mod is { } mod ? launch.GetValueOrDefault(mod) : 0, redraw);
             OrderingOnly(row, true);
         }
+        Costs.Lap("load order: rows moved, decorated");
     }
 
     // Hides the handles and numbers in other views, kept for the next visit (making them was most of a switch here).

@@ -45,25 +45,25 @@ static class RowStrip
         // Each view keeps its own buttons and hides the other's, so a switch between the main list and Load Order
         // doesn't make every row's again.
         var (name, path, other) = Store.Data.LoadOrderView ? (OrderActionsName, OrderActionsPath, ActionsPath) : (ActionsName, ActionsPath, OrderActionsPath);
+        Costs.Lap("strip order");
         foreach (var row in only ?? rows)
         {
-            Lap(null);
             var title = row.GetNode<Control>(TitlePath);
             if (!row.HasMeta(StripMeta))
             {
                 title.OffsetBottom -= Height + TitleGap;
                 row.SetMeta(StripMeta, true);
             }
-            Lap("title");
+            Costs.Lap("strip title");
 
             Edge(row, edge?.Invoke(row));
-            Lap("pencil");
+            Costs.Lap("strip pencil");
 
             // The buttons, changed only when they'd differ: their labels and states, and in Load Order the row's place
             // (what Up and Down do depends on it).
             var items = actions(row).ToList();
             var place = Store.Data.LoadOrderView ? $"{row.GetIndex()}/{row.GetParent()?.GetChildCount()}" : "";
-            var does = $"{place}|{string.Join("|", items.Select(i => $"{i.Label}/{i.Disabled}/{i.Flat}/{i.Tip}"))}";
+            var does = $"{place}|{string.Join("|", items.Select(i => i.Shows()))}";
             var margin = Store.Data.LoadOrderView ? -LoadOrderMargin : -RightMargin;
             if (row.GetNodeOrNull<HBoxContainer>(path) is not { } buttons || buttons.GetMeta(SaysMeta, "").AsString() != does)
                 buttons = Buttons(row, name, path, items, does, margin);
@@ -72,7 +72,7 @@ static class RowStrip
             buttons.OffsetRight = buttons.OffsetLeft = margin;
             var clear = buttons.OffsetRight - Width(buttons, items) - ActionsGap;
             title.OffsetRight = clear;
-            Lap("buttons");
+            Costs.Lap("strip buttons");
 
             // The line is remade only when its tags or author change (remaking every row's on each keystroke was most of
             // a redraw's time); otherwise it's updated in place.
@@ -84,7 +84,7 @@ static class RowStrip
             var kept = row.GetNodeOrNull<HBoxContainer>(StripPath);
             if (kept?.GetMeta(SaysMeta, "").AsString() == says)
             {
-                Lap("rest");
+                Costs.Lap("strip rest");
                 continue;
             }
             if (row.GetNodeOrNull<Control>(other) is { } hidden)
@@ -95,8 +95,8 @@ static class RowStrip
                 kept.SetMeta(SaysMeta, says);
                 (kept.OffsetLeft, kept.OffsetRight, kept.Visible) = (title.OffsetLeft, clear, true);
                 if (SetNote(kept, text) && chips.Count > 0) // the tags fold again for the note's new width (a new width of the line refolds by itself)
-                    Callable.From(() => Fold(row, kept, chips)).CallDeferred();
-                Lap("rest");
+                    Callable.From(() => Costs.Time("tags folded", () => Fold(row, kept, chips))).CallDeferred();
+                Costs.Lap("strip rest");
                 continue;
             }
             Drop(row, StripPath);
@@ -112,17 +112,17 @@ static class RowStrip
             strip.SetMeta(ShowsMeta, shows);
             (strip.AnchorTop, strip.AnchorBottom, strip.AnchorRight) = (1, 1, 1);
             (strip.OffsetLeft, strip.OffsetRight, strip.OffsetTop, strip.OffsetBottom) = (title.OffsetLeft, clear, -Height - 2, -2);
-            Lap("rest");
+            Costs.Lap("strip rest");
 
             foreach (var chip in chips)
                 strip.AddChild(Tags.Make(chip, add => Search.ByChip(row, chip, add)));
-            Lap("tags");
+            Costs.Lap("strip tags");
 
             if (text.Length > 0)
                 strip.AddChild(Note(text));
             else if (author.Length > 0)
                 strip.AddChild(Spacer());
-            Lap("needs");
+            Costs.Lap("strip needs");
 
             if (author.Length > 0)
             {
@@ -137,20 +137,20 @@ static class RowStrip
                 }
                 strip.AddChild(by);
             }
-            Lap("author");
+            Costs.Lap("strip author");
 
             row.AddChild(strip);
-            Lap("added");
+            Costs.Lap("strip added");
 
             // Too many tags for the line: the last ones are "and N more" (Fold). Worked out once the chips are laid
             // out, and again whenever the line changes width.
             if (chips.Count > 0)
             {
-                void Refold() => Fold(row, strip, chips);
+                void Refold() => Costs.Time("tags folded", () => Fold(row, strip, chips));
                 strip.Resized += Refold;
                 Callable.From(Refold).CallDeferred();
             }
-            Lap("rest");
+            Costs.Lap("strip rest");
         }
     }
 
@@ -259,26 +259,6 @@ static class RowStrip
         if (author != null)
             strip.MoveChild(part, author.GetIndex()); // before the author, after the tags and "and N more"
         return true;
-    }
-
-#if DEVTOOLS
-    // Self-test: what each part of Apply took, added up while Timing is on (the many-mods test, the --real tour).
-    public static bool Timing { get; set; }
-    public static readonly Dictionary<string, double> Costs = [];
-    static readonly System.Diagnostics.Stopwatch Watch = new();
-#endif
-
-    // Ends the part being timed (null: a row's start) and starts the next. The calls vanish from the Workshop build.
-    [System.Diagnostics.Conditional("DEVTOOLS")]
-    static void Lap(string? part)
-    {
-#if DEVTOOLS
-        if (!Timing)
-            return;
-        if (part != null)
-            Costs[part] = Costs.GetValueOrDefault(part) + Watch.Elapsed.TotalMilliseconds;
-        Watch.Restart();
-#endif
     }
 
     // Shows as many tags as fit beside the author and the needs (up to half the line), whole ones only; the rest are
