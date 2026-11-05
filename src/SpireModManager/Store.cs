@@ -50,12 +50,16 @@ internal class StoreData
     public string? ImportedFrom { get; set; }
     // The share dialog's tick boxes, kept across launches while its Remember selection is ticked; null: the defaults.
     public ShareChoice? ShareChoices { get; set; }
+    // The import dialog's Replace tick boxes, kept the same way while its Remember selection is ticked.
+    public ImportChoice? ImportChoices { get; set; }
 
     // A copy that shares everything below the top level (Store.EditsJson clears its view state).
     public StoreData Shallow() => (StoreData)MemberwiseClone();
 }
 
-internal record ShareChoice(bool Category, bool Disabled, bool Alias, bool Notes);
+internal record ShareChoice(bool Category, bool Disabled, bool Alias, bool Notes, bool Tags = false);
+
+internal record ImportChoice(bool Category, bool Alias, bool Tags, bool Notes);
 
 internal class Category
 {
@@ -490,6 +494,7 @@ internal static class Store
         var copy = data.Shallow();
         copy.VanillaView = copy.LoadOrderView = copy.UncategorizedCollapsed = copy.ManagersWarningDismissed = false;
         copy.ShareChoices = null;
+        copy.ImportChoices = null;
         copy.SameIdDismissed = copy.BranchDismissed = null;
         copy.MenuButtonAt = null;
         copy.Categories = [.. data.Categories.Select(category =>
@@ -519,7 +524,7 @@ internal static class Store
         var now = Data;
         (restored.VanillaView, restored.LoadOrderView, restored.UncategorizedCollapsed, restored.ManagersWarningDismissed, restored.ShareChoices) =
             (now.VanillaView, now.LoadOrderView, now.UncategorizedCollapsed, now.ManagersWarningDismissed, now.ShareChoices);
-        (restored.SameIdDismissed, restored.BranchDismissed, restored.MenuButtonAt) = (now.SameIdDismissed, now.BranchDismissed, now.MenuButtonAt);
+        (restored.SameIdDismissed, restored.BranchDismissed, restored.MenuButtonAt, restored.ImportChoices) = (now.SameIdDismissed, now.BranchDismissed, now.MenuButtonAt, now.ImportChoices);
         foreach (var category in restored.Categories)
             category.Collapsed = now.Categories.FirstOrDefault(c => c.Name == category.Name)?.Collapsed ?? false;
         _data = restored;

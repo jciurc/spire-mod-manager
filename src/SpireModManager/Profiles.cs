@@ -425,7 +425,7 @@ static class Profiles
                 var on = mods.GetValueOrDefault((id, m.modSource)) is { } entry ? CopyOn(m, entry) : Copies.Ticked(m);
                 var info = Store.InfoFor(m); // this copy's
                 return new ProfileCsv.Row(id, m.manifest?.name ?? "", m.manifest?.version ?? "", on, info?.Category ?? "",
-                    Compat.WorkshopId(m) is { } workshop ? workshop.ToString() : "", info?.Alias ?? "", info?.Notes ?? "");
+                    Compat.WorkshopId(m) is { } workshop ? workshop.ToString() : "", info?.Alias ?? "", info?.Notes ?? "", string.Join(", ", info?.Tags ?? []));
             }).ToList();
     }
 
@@ -442,25 +442,28 @@ static class Profiles
     public record ImportPlan(List<ProfileMod> Mods, int On, int Off, int Same, int Unlisted, List<ProfileCsv.Entry> Missing, ImportExtras Extras,
         List<ProfileCsv.Entry> BothCopies);
 
-    // What else a list gives: categories, aliases and notes, taken only where a mod has none of its own. Categories are
-    // every profile's, so an import never moves a mod that's already in one, nor renames anything. Sorted: each mod's key
-    // (installed copies by theirs, a mod not installed by its id, so it arrives in its category) and its category;
-    // NewCategories: the ones to create, in list order; Named: the aliases and notes to fill in (null: left as it is).
-    public record ImportExtras(List<(string Key, string Category)> Sorted, List<string> NewCategories, List<(string Key, string? Alias, string? Notes)> Named)
+    // What else a list gives: categories, aliases, tags and notes. Each fills in only what a mod has none of, unless the
+    // import dialog's Replace box for it is ticked (ImportChoice): then the list's value takes the place of the mod's own.
+    // A blank in the list never clears anything. Categories are every profile's, and an import never renames one. Sorted:
+    // each mod's key (installed copies by theirs, a mod not installed by its id, so it arrives in its category) and its
+    // category; NewCategories: the ones to create, in list order; Named: the aliases, notes and tags to set (null: left as
+    // it is). Only what changes is listed.
+    public record ImportExtras(List<(string Key, string Category)> Sorted, List<string> NewCategories,
+        List<(string Key, string? Alias, string? Notes, List<string>? Tags)> Named)
     {
-        public int Details => Named.Sum(n => (n.Alias != null ? 1 : 0) + (n.Notes != null ? 1 : 0));
+        public int Details => Named.Sum(n => (n.Alias != null ? 1 : 0) + (n.Notes != null ? 1 : 0) + (n.Tags != null ? 1 : 0));
     }
 
-    // Each id's first category, alias and notes in the list (rows for two copies of it may differ: the first that gives
-    // one counts), for every copy of it installed, or for the id when none is.
-    static ImportExtras PlanExtras(IReadOnlyList<ProfileCsv.Entry> entries)
+    // Each id's first category, alias, tags and notes in the list (rows for two copies of it may differ: the first that
+    // gives one counts), for every copy of it installed, or for the id when none is.
+    static ImportExtras PlanExtras(IReadOnlyList<ProfileCsv.Entry> entries, ImportChoice? replace)
     {
-        var (sorted, created, named) = (new List<(string, string)>(), new List<string>(), new List<(string, string?, string?)>());
+        var (sorted, created, named) = (new List<(string, string)>(), new List<string>(), new List<(string, string?, string?, List<string>?)>());
         foreach (var rows in entries.Where(e => !Manager(e.Id)).GroupBy(e => e.Id))
         {
             string First(Func<ProfileCsv.Entry, string> value) => rows.Select(value).FirstOrDefault(v => v.Length > 0) ?? "";
-            var (category, alias, notes) = (First(e => e.Category), First(e => e.Alias), First(e => e.Notes));
-            if (category.Length == 0 && alias.Length == 0 && notes.Length == 0)
+            var (category, alias, notes, tags) = (First(e => e.Category), First(e => e.Alias), First(e => e.Notes), SpireModManager.Tags.Parse(First(e => e.Tags)));
+            if (category.Length == 0 && alias.Length == 0 && notes.Length == 0 && tags == null)
                 continue;
             var keys = AllMods().Where(m => m.manifest?.id == rows.Key).Select(Copies.Key).Distinct().ToList();
             foreach (var key in keys.Count > 0 ? keys : [rows.Key])
@@ -469,18 +472,26 @@ static class Profiles
                 // A category of its own that's gone counts as none: the mod shows under Uncategorized. The list's category
                 // is one of the player's, or one made already: by its name, or else the same name in another case ("tools" goes
                 // into Tools).
-                if (category.Length > 0 && !(info?.Category is { } own && Categories.Find(own) != null))
+                var own = info?.Category is { } ownName ? Categories.Find(ownName)?.Name : null;
+                if (category.Length > 0 && (own == null || replace?.Category == true))
                 {
                     bool Same(string name) => string.Equals(name, category, StringComparison.OrdinalIgnoreCase);
                     var name = Categories.Find(category)?.Name ?? Store.Data.Categories.FirstOrDefault(c => Same(c.Name))?.Name ?? created.FirstOrDefault(Same);
-                    if (name == null)
-                        created.Add(name = category);
-                    sorted.Add((key, name));
+                    if (name == null || name != own) // (none yet: a new category)
+                    {
+                        if (name == null)
+                            created.Add(name = category);
+                        sorted.Add((key, name));
+                    }
                 }
-                var (newAlias, newNotes) = (alias.Length > 0 && string.IsNullOrEmpty(info?.Alias) ? alias : null,
-                    notes.Length > 0 && string.IsNullOrEmpty(info?.Notes) ? notes : null);
-                if (newAlias != null || newNotes != null)
-                    named.Add((key, newAlias, newNotes));
+                string? Taken(string value, string? mine, bool? replaces) =>
+                    value.Length > 0 && (string.IsNullOrEmpty(mine) || replaces == true) && value != mine ? value : null;
+                var mineTags = info?.Tags ?? [];
+                var newTags = tags != null && (mineTags.Count == 0 || replace?.Tags == true)
+                    && !(mineTags.Count == tags.Count && tags.All(t => mineTags.Contains(t, StringComparer.OrdinalIgnoreCase))) ? tags : null;
+                var (newAlias, newNotes) = (Taken(alias, info?.Alias, replace?.Alias), Taken(notes, info?.Notes, replace?.Notes));
+                if (newAlias != null || newNotes != null || newTags != null)
+                    named.Add((key, newAlias, newNotes, newTags));
             }
         }
         return new ImportExtras(sorted, created, named);
@@ -488,8 +499,8 @@ static class Profiles
 
     // Counted per copy, as Changes counts. Each installed copy is set by the rows that name it (RowsOf), so where its id
     // is installed more than once, a row linking a Workshop item sets that copy alone and leaves a copy installed by hand
-    // beside it as it is.
-    public static ImportPlan PlanImport(IReadOnlyList<ProfileCsv.Entry> entries)
+    // beside it as it is. Replace: the import dialog's Replace boxes (PlanExtras).
+    public static ImportPlan PlanImport(IReadOnlyList<ProfileCsv.Entry> entries, ImportChoice? replace = null)
     {
         var current = Current();
         var byId = entries.ToLookup(e => e.Id); // in list order
@@ -545,7 +556,7 @@ static class Profiles
             .Where(e => current.FirstOrDefault(c => c.Id == e.Id && c.Source == ModSource.ModsDirectory) is { } local
                 && (mods.FirstOrDefault(m => m.Id == e.Id && m.Source == ModSource.ModsDirectory)?.Enabled ?? local.Enabled))
             .DistinctBy(e => e.Id).ToList();
-        return new ImportPlan(mods, on, off, same, unlisted, missing, PlanExtras(entries), both);
+        return new ImportPlan(mods, on, off, same, unlisted, missing, PlanExtras(entries, replace), both);
     }
 
     // The copy a Workshop link names ("w:<item>"), or null for none.
@@ -599,7 +610,7 @@ static class Profiles
     }
 
     // A new profile from a shared list, placed after the active one and switched to, as New does, with the list's
-    // categories, aliases and notes where mods have none (the new categories after the player's): one undo step.
+    // categories, aliases, tags and notes as PlanExtras chose them (the new categories after the player's): one undo step.
     public static Profile Import(string name, ImportPlan plan, NModdingScreen screen)
     {
         var from = Active;
@@ -610,8 +621,8 @@ static class Profiles
                 Store.Data.Categories.Add(new Category { Name = category });
             foreach (var (key, category) in plan.Extras.Sorted)
                 Categories.Assign(key, category);
-            foreach (var (key, alias, notes) in plan.Extras.Named)
-                Store.EditMod(key, info => (info.Alias, info.Notes) = (alias ?? info.Alias, notes ?? info.Notes));
+            foreach (var (key, alias, notes, tags) in plan.Extras.Named)
+                Store.EditMod(key, info => (info.Alias, info.Notes, info.Tags) = (alias ?? info.Alias, notes ?? info.Notes, tags?.ToList() ?? info.Tags));
             var list = Store.Data.Profiles;
             list.Insert(from != null ? list.IndexOf(from) + 1 : list.Count, profile);
             SwitchTo(profile, screen);
