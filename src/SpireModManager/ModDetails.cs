@@ -806,6 +806,8 @@ static class ModDetails
         var missing = needs.Where(d => d.Mod == null).Select(d => d.Id).ToList();
         var off = needs.Where(d => d.Mod is { } found && !Copies.Loads(found))
             .Select(d => (d.Mod?.manifest?.name ?? d.Id) + (TurnedOff.Has(d.Id) ? " " + Menus.Text("SPIRE_MOD_MANAGER.DEP_TURNED_OFF") : "")).ToList();
+        var old = needs.Where(d => d.Mod is { } found && Copies.Loads(found) && Dependencies.Old(mod, found))
+            .Select(d => $"{d.Mod?.manifest?.name ?? d.Id} {Menus.Format("SPIRE_MOD_MANAGER.GAME_VERSION_MIN", ("version", Dependencies.MinOf(mod, d.Id) ?? ""))}").ToList();
         var lines = new List<string>();
         if (missing.Count > 0)
             lines.Add(Menus.Format(missing.Count == 1 ? "SPIRE_MOD_MANAGER.PROBLEM_DEP_MISSING_ONE" : "SPIRE_MOD_MANAGER.PROBLEM_DEP_MISSING",
@@ -813,6 +815,9 @@ static class ModDetails
         if (off.Count > 0)
             lines.Add(Menus.Format(off.Count == 1 ? "SPIRE_MOD_MANAGER.PROBLEM_DEP_OFF_ONE" : "SPIRE_MOD_MANAGER.PROBLEM_DEP_OFF",
                 ("mods", string.Join(", ", off))));
+        if (old.Count > 0)
+            lines.Add(Menus.Format(old.Count == 1 ? "SPIRE_MOD_MANAGER.PROBLEM_DEP_OLD_ONE" : "SPIRE_MOD_MANAGER.PROBLEM_DEP_OLD",
+                ("mods", string.Join(", ", old))));
         return lines;
     }
 

@@ -42,6 +42,24 @@ static partial class SelfTest
         });
         Check("a mod needing several of a kind: one line naming them all, in the plural",
             several.SequenceEqual(["Requires mods to be installed: SmmGoneA, SmmGoneB", "Requires mod to be enabled: Test Framework"]), string.Join(" | ", several));
+        // A dependency below the version a mod needs, as the game reads both (it fails the mod: DEPENDENCY_VERSION_UNSUPPORTED,
+        // or _INVALID for a version it can't read), here this mod, which always loads: a problem line, the row's word, the
+        // banner's mods (Unmet). At or below its own version: none.
+        Mod Needing(string id, string min) => new()
+        {
+            path = "", modSource = ModSource.ModsDirectory,
+            manifest = new ModManifest { id = id, name = id, dependencies = [new(ModEntry.ModId, min)] },
+        };
+        var ours = Dependencies.Find(ModEntry.ModId)?.manifest?.name ?? ModEntry.ModId;
+        var (tooOld, unread, fine) = (Needing("SmmOldTest", "99.0.0"), Needing("SmmUnreadTest", "2.6"), Needing("SmmFineTest", "0.0.1"));
+        var oldLines = ModDetails.DependencyProblems(tooOld);
+        var oldRow = RowStrip.Needs(tooOld, new Dictionary<Mod, int>(), loadOrder: false);
+        Check("a dependency below the version a mod needs: \"Requires a newer mod version: Spire Mod Manager 99.0.0 or newer\", the row's "
+            + "\"(99.0.0 or newer)\", among the banner's mods; one whose minimum the game can't read too; one it meets, none",
+            oldLines.SequenceEqual([$"Requires a newer mod version: {ours} 99.0.0 or newer"]) && oldRow.Contains("(99.0.0 or newer)") && Dependencies.Unmet(tooOld)
+            && Dependencies.Unmet(unread) && ModDetails.DependencyProblems(fine).Count == 0 && !Dependencies.Unmet(fine)
+            && !RowStrip.Needs(fine, new Dictionary<Mod, int>(), loadOrder: false).Contains("or newer"),
+            $"{string.Join(" | ", oldLines)} / {oldRow} / unread {Dependencies.Unmet(unread)}, fine {string.Join(" | ", ModDetails.DependencyProblems(fine))}");
         // Cancel first, at the row's left; the fixes and Relaunch anyway at its right.
         var row = Dialog()?.FindChild("Buttons", true, false) as Control;
         var rowButtons = row?.GetChildren().OfType<Button>().ToList() ?? [];

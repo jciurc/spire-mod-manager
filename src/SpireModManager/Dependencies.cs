@@ -61,22 +61,32 @@ static class Dependencies
     public static IEnumerable<Mod> NeededBy(string? id) => id != null && Lookups.Current is { } now ? now.NeededBy(id)
         : ModManager.Mods.Where(m => Of(m).Contains(id));
 
-    public enum Problem { None, Missing, Off, LoadsBefore }
+    public enum Problem { None, Missing, Off, Old, LoadsBefore }
 
     // What's wrong with one dependency of an enabled mod, given the order (index per mod) it would load in. Off: no copy
-    // of it loads (Find prefers the one that does).
+    // of it loads (Find prefers the one that does). Old: the copy that loads is below the version the mod needs (Old).
     public static Problem Check(Mod mod, string dependency, IReadOnlyDictionary<Mod, int> order)
     {
         if (Find(dependency) is not { } dep)
             return Problem.Missing;
         if (!Copies.Loads(dep))
             return Problem.Off;
+        if (Old(mod, dep))
+            return Problem.Old;
         return order.TryGetValue(dep, out var d) && order.TryGetValue(mod, out var m) && d > m ? Problem.LoadsBefore : Problem.None;
     }
 
-    // Whether a mod that loads after a relaunch needs one that's missing or won't load, so it fails to: the main list's red
-    // banner's mods (LoadOrder.Unloadable).
-    public static bool Unmet(Mod mod) => Copies.Loads(mod) && Of(mod).Any(id => Find(id) is not { } dep || !Copies.Loads(dep));
+    // The minimum version a mod names for a dependency, as written (null: none).
+    public static string? MinOf(Mod mod, string id) => mod.manifest?.dependencies?.FirstOrDefault(d => d.id == id && d.minVersion != null)?.minVersion;
+
+    // Whether a dependency's copy is below a minimum version the mod names for it, as the game reads them: it fails the
+    // mod (DEPENDENCY_VERSION_UNSUPPORTED), and does where it can't read either version (DEPENDENCY_VERSION_INVALID).
+    public static bool Old(Mod mod, Mod dep) => mod.manifest?.dependencies?.Any(d => d.id == dep.manifest?.id && d.minVersion != null
+        && !(Ver.Game(d.minVersion) is { } min && Copies.Meets(dep, [min]))) == true;
+
+    // Whether a mod that loads after a relaunch needs one that's missing, won't load or is too old, so it fails to: the
+    // main list's red banner's mods (LoadOrder.Unloadable).
+    public static bool Unmet(Mod mod) => Copies.Loads(mod) && Of(mod).Any(id => Find(id) is not { } dep || !Copies.Loads(dep) || Old(mod, dep));
 
     // Installed mods that won't load but are needed by one that will, directly or through another one of these.
     public static List<Mod> NeededOff(IEnumerable<Mod> mods)
