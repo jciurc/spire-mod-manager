@@ -708,7 +708,9 @@ static partial class SelfTest
         {
             var box = await HoverCardBox(menu, lowest, "SpireModManagerNotesCard");
             var (title, mouse) = (lowest.GetGlobalRect(), lowest.GetGlobalRect().GetCenter());
-            var up = box is { } card && Math.Max(mouse.Y + 20, title.End.Y + Hover.Gap) + card.Size.Y > view.Y;
+            // Above where it doesn't fit below, or with the mouse in the screen's bottom edge zone (Hover.EdgeZone), room
+            // or not.
+            var up = box is { } card && (mouse.Y > view.Y * (1 - Hover.EdgeZone) || Math.Max(mouse.Y + 20, title.End.Y + Hover.Gap) + card.Size.Y > view.Y);
             var misplaced = CardMisplaced(box, lowest, up, left: false);
             Results.Add($"INFO the lowest row's card opened {(up ? "above" : "below")} its title");
             Check("a row's card near the bottom of the list: below its title where it fits, otherwise above it", misplaced == null, misplaced ?? "");

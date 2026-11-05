@@ -24,7 +24,7 @@ static class Hover
     // only the part near the mouse of anything taller.
     const float Reach = 100;
     // The part of the screen at its bottom and right edges where a card opens above and left of the mouse.
-    const float EdgeZone = 0.15f;
+    public const float EdgeZone = 0.15f;
 
     public enum Timing { Normal, Instant, Slow, Plain, Late }
 
