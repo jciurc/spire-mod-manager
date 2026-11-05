@@ -5177,8 +5177,12 @@ static partial class SelfTest
             // where there's a problem), and only the copy that won't load has the aside keyword (the info panel's Other keywords).
             var note = (user == null ? null : RowOf(user))?.GetNodeOrNull<RichTextLabel>("SpireModManagerStrip/Needs")?.GetParsedText();
             var needs = $"{Menus.Text("SPIRE_MOD_MANAGER.NEEDS_LABEL")}: {loads.manifest?.name}";
-            var words = new[] { "SPIRE_MOD_MANAGER.DEP_MISSING", "SPIRE_MOD_MANAGER.DEP_OFF", "SPIRE_MOD_MANAGER.DEP_AFTER" }.Select(Menus.Text);
-            Want(user == null || note == needs || words.Any(w => note == $"{needs} {w}"),
+            // Below the 1.1.0 it needs (A, 1.0.0), the version word: the game fails it (Dependencies.Old).
+            var words = new[] { "SPIRE_MOD_MANAGER.DEP_MISSING", "SPIRE_MOD_MANAGER.DEP_OFF", "SPIRE_MOD_MANAGER.DEP_AFTER" }.Select(Menus.Text)
+                .Append(Menus.Format("SPIRE_MOD_MANAGER.DEP_OLD", ("version", "1.1.0")));
+            var tooOld = Ver.Game(loads.manifest?.version) is { } loadsVersion && Ver.Game("1.1.0") is { } wanted && loadsVersion.CompareTo(wanted) < 0;
+            Want(user == null || !tooOld && (note == needs || words.Any(w => note == $"{needs} {w}"))
+                || tooOld && note == $"{needs} {Menus.Format("SPIRE_MOD_MANAGER.DEP_OLD", ("version", "1.1.0"))}",
                 $"Test Twin User's row strip \"{note ?? "none"}\"");
             Want(new[] { a, b }.All(m => HiddenTags.Of(m).Contains("aside") == (m == losing)),
                 $"the copies' keywords {string.Join(" / ", new[] { a, b }.Select(m => string.Join(",", HiddenTags.Of(m))))}");
