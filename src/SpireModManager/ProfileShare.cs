@@ -7,28 +7,31 @@ using MegaCrit.Sts2.Core.Nodes.Screens.ModdingScreen;
 namespace SpireModManager;
 
 // A mod list as CSV, in Better Mod Menu's column order: Mod Id, Name, Version, Enabled (TRUE/FALSE), then the optional
-// Category, Workshop Id (the id only, as Steam may move an item's page), Alias and Note. Writing follows RFC 4180,
-// with a ' before values a spreadsheet would run as a formula. Reading is forgiving: a BOM, CRLF or LF, a ; or tab
-// separator, columns by header in any order. Only Mod Id and Enabled are needed, and a blank or missing Enabled means
-// enabled. Category (Better Mod Menu's Group, where "Unassigned" is none), Alias and Note (Notes in Better Mod Menu's
-// lists and our older ones) are read when there.
+// Category, Workshop Id (the id only, as Steam may move an item's page), Alias, Tags (", " between them) and Note.
+// Writing follows RFC 4180, with a ' before values a spreadsheet would run as a formula. Reading is forgiving: a BOM,
+// CRLF or LF, a ; or tab separator, columns by header in any order. Only Mod Id and Enabled are needed, and a blank or
+// missing Enabled means enabled. Category (Better Mod Menu's Group, where "Unassigned" is none), Alias, Tags and Note
+// (Notes in Better Mod Menu's lists and our older ones) are read when there.
 static class ProfileCsv
 {
     // What a shared list holds besides id, name, version and Enabled: the category by default, the rest off. Disabled:
     // rows for the mods that are off too.
-    public record Options(bool Category = true, bool Disabled = false, bool Alias = false, bool Notes = false);
+    public record Options(bool Category = true, bool Disabled = false, bool Alias = false, bool Notes = false, bool Tags = false);
 
     public static string[] Header(Options options) =>
     [
         "Mod Id", "Name", "Version", "Enabled", .. options.Category ? ["Category"] : Array.Empty<string>(), "Workshop Id",
-        .. options.Alias ? ["Alias"] : Array.Empty<string>(), .. options.Notes ? ["Note"] : Array.Empty<string>(),
+        .. options.Alias ? ["Alias"] : Array.Empty<string>(), .. options.Tags ? ["Tags"] : Array.Empty<string>(),
+        .. options.Notes ? ["Note"] : Array.Empty<string>(),
     ];
 
-    // One mod to write. WorkshopId: "" for a mod that isn't from the Workshop.
-    public record Row(string Id, string Name, string Version, bool Enabled, string Category, string WorkshopId, string Alias = "", string Notes = "");
+    // One mod to write. WorkshopId: "" for a mod that isn't from the Workshop. Tags: the player's own, ", " between.
+    public record Row(string Id, string Name, string Version, bool Enabled, string Category, string WorkshopId, string Alias = "", string Notes = "",
+        string Tags = "");
 
     // One mod read: the parts an import uses ("" for a value the list doesn't give).
-    public record Entry(string Id, bool Enabled, string Name, string WorkshopLink, string Category = "", string Alias = "", string Notes = "");
+    public record Entry(string Id, bool Enabled, string Name, string WorkshopLink, string Category = "", string Alias = "", string Notes = "",
+        string Tags = "");
 
     // As long as the boxes that name them take: a category's rename box, a mod's alias box.
     const int CategoryMax = 40, AliasMax = 80;
@@ -58,7 +61,8 @@ static class ProfileCsv
         foreach (var row in rows.Where(r => options.Disabled || r.Enabled))
             Line(text, [
                 row.Id, row.Name, row.Version, row.Enabled ? "TRUE" : "FALSE", .. options.Category ? [row.Category] : Array.Empty<string>(),
-                row.WorkshopId, .. options.Alias ? [row.Alias] : Array.Empty<string>(), .. options.Notes ? [row.Notes] : Array.Empty<string>(),
+                row.WorkshopId, .. options.Alias ? [row.Alias] : Array.Empty<string>(), .. options.Tags ? [row.Tags] : Array.Empty<string>(),
+                .. options.Notes ? [row.Notes] : Array.Empty<string>(),
             ]);
         return text.ToString().TrimEnd('\r', '\n'); // no line break after the last row (a quoted value's own ends in '"')
     }
@@ -158,7 +162,7 @@ static class ProfileCsv
         var header = records[0].Select(h => h.Trim()).ToList();
         int Column(params string[] names) => header.FindIndex(h => names.Any(n => string.Equals(h, n, StringComparison.OrdinalIgnoreCase)));
         var (id, enabled, name, link) = (Column("Mod Id", "Id", "ModId"), Column("Enabled"), Column("Name"), Column("Workshop Id", "Workshop Link", "WorkshopId"));
-        var (category, alias, notes) = (Column("Category", "Group"), Column("Alias"), Column("Note", "Notes"));
+        var (category, alias, notes, tags) = (Column("Category", "Group"), Column("Alias"), Column("Note", "Notes"), Column("Tags", "Tag"));
         if (id < 0)
             return Problem(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_ID"));
         if (enabled < 0)
@@ -177,7 +181,7 @@ static class ProfileCsv
             var group = OneLine(Cell(category));
             mods.Add(new Entry(modId, on, Cell(name), WorkshopFrom(Cell(link)),
                 group == "Unassigned" ? "" : Cut(group, CategoryMax), Cut(OneLine(Cell(alias)), AliasMax),
-                Cell(notes).Replace("\r\n", "\n").Replace('\r', '\n')));
+                Cell(notes).Replace("\r\n", "\n").Replace('\r', '\n'), string.Join(", ", Tags.Parse(OneLine(Cell(tags))) ?? [])));
         }
         return mods.Count == 0 ? Problem(Menus.Text("SPIRE_MOD_MANAGER.IMPORT_NO_MODS")) : new Result(mods, null);
     }
@@ -227,23 +231,35 @@ static class ProfileShare
     static ProfileCsv.Options? _options;
 
     static ProfileCsv.Options Choices => _options ??= Store.Data.ShareChoices is { } kept
-        ? new ProfileCsv.Options(kept.Category, kept.Disabled, kept.Alias, kept.Notes) : new ProfileCsv.Options();
+        ? new ProfileCsv.Options(kept.Category, kept.Disabled, kept.Alias, kept.Notes, kept.Tags) : new ProfileCsv.Options();
+
+    // The import dialog's Replace boxes, the same way (Store.Data.ImportChoices): all off by default, so a list fills in
+    // only what a mod has none of.
+    static ImportChoice? _replace;
+
+    static ImportChoice Replace => _replace ??= Store.Data.ImportChoices ?? new ImportChoice(false, false, false, false);
 
 #if DEVTOOLS
     // Self-test: the tick boxes as a new launch finds them.
-    public static void ForgetSessionChoices() => _options = null;
+    public static void ForgetSessionChoices() => (_options, _replace) = (null, null);
 #endif
 
     // Remember selection on: these tick boxes kept in our data (saved now), for the next launches too. Off: forgotten.
     static void Keep(bool on)
     {
-        Store.Data.ShareChoices = on ? new ShareChoice(Choices.Category, Choices.Disabled, Choices.Alias, Choices.Notes) : null;
+        Store.Data.ShareChoices = on ? new ShareChoice(Choices.Category, Choices.Disabled, Choices.Alias, Choices.Notes, Choices.Tags) : null;
+        Store.Save();
+    }
+
+    static void KeepReplace(bool on)
+    {
+        Store.Data.ImportChoices = on ? Replace : null;
         Store.Save();
     }
 
     public static void ShowShare(NModdingScreen screen)
     {
-        if (Profiles.Active is not { } profile || Dialog(screen, "SPIRE_MOD_MANAGER.SHARE_PROFILE", 920) is not { } column)
+        if (Profiles.Active is not { } profile || Dialog(screen, "SPIRE_MOD_MANAGER.SHARE_PROFILE", 1060) is not { } column)
             return;
         var rows = Profiles.ShareRows(profile);
         var csv = ProfileCsv.Write(rows, Choices);
@@ -269,6 +285,7 @@ static class ProfileShare
         options.AddChild(Option("SPIRE_MOD_MANAGER.SHARE_CATEGORY", Choices.Category, on => Set(o => o with { Category = on }), "IncludeCategory"));
         options.AddChild(Option("SPIRE_MOD_MANAGER.SHARE_DISABLED", Choices.Disabled, on => Set(o => o with { Disabled = on }), "IncludeDisabled"));
         options.AddChild(Option("SPIRE_MOD_MANAGER.SHARE_ALIAS", Choices.Alias, on => Set(o => o with { Alias = on }), "IncludeAlias"));
+        options.AddChild(Option("SPIRE_MOD_MANAGER.SHARE_TAGS", Choices.Tags, on => Set(o => o with { Tags = on }), "IncludeTags"));
         options.AddChild(Option("SPIRE_MOD_MANAGER.SHARE_NOTES", Choices.Notes, on => Set(o => o with { Notes = on }), "IncludeNotes"));
         row.AddChild(options);
         var remember = Option("SPIRE_MOD_MANAGER.SHARE_REMEMBER", Store.Data.ShareChoices != null, Keep, "RememberChoices");
@@ -347,7 +364,7 @@ static class ProfileShare
             if (box.Text != loaded)
                 file = null;
             Say(status, read?.Error ?? "", error: true);
-            var plan = read is { Error: null } ? Profiles.PlanImport(read.Mods) : null;
+            var plan = read is { Error: null } ? Profiles.PlanImport(read.Mods, Replace) : null;
             preview.Text = plan != null && read != null ? Preview(read.Mods, plan, Profiles.ImportName(file)) : "";
             // Subscribe to the missing mods on the Workshop that aren't on their way: there while there are any, with Steam.
             if (subscribe != null)
@@ -358,6 +375,32 @@ static class ProfileShare
             }
         }
         box.TextChanged += Update;
+        // The Replace boxes under the text (each tick plans the import again), with Remember selection at the row's right end,
+        // as on Export. Unticked, the list's category, alias, tags or notes fill in only what a mod has none of.
+        var replaceRow = new HBoxContainer { Name = "ReplaceRow" };
+        replaceRow.AddThemeConstantOverride("separation", 22);
+        var replaces = new HFlowContainer { Name = "Replaces", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        replaces.AddThemeConstantOverride("h_separation", 22);
+        replaces.AddThemeConstantOverride("v_separation", 4);
+        void SetReplace(Func<ImportChoice, ImportChoice> change)
+        {
+            _replace = change(Replace);
+            if (Store.Data.ImportChoices != null)
+                KeepReplace(true);
+            Update();
+        }
+        replaces.AddChild(Option("SPIRE_MOD_MANAGER.IMPORT_REPLACE_CATEGORY", Replace.Category, on => SetReplace(r => r with { Category = on }), "ReplaceCategory"));
+        replaces.AddChild(Option("SPIRE_MOD_MANAGER.IMPORT_REPLACE_ALIAS", Replace.Alias, on => SetReplace(r => r with { Alias = on }), "ReplaceAlias"));
+        replaces.AddChild(Option("SPIRE_MOD_MANAGER.IMPORT_REPLACE_TAGS", Replace.Tags, on => SetReplace(r => r with { Tags = on }), "ReplaceTags"));
+        replaces.AddChild(Option("SPIRE_MOD_MANAGER.IMPORT_REPLACE_NOTES", Replace.Notes, on => SetReplace(r => r with { Notes = on }), "ReplaceNotes"));
+        replaceRow.AddChild(replaces);
+        var rememberReplace = Option("SPIRE_MOD_MANAGER.SHARE_REMEMBER", Store.Data.ImportChoices != null, KeepReplace, "RememberReplace");
+        rememberReplace.SizeFlagsVertical = Control.SizeFlags.ShrinkBegin;
+        replaceRow.AddChild(rememberReplace);
+        foreach (var replaceBox in replaces.GetChildren().OfType<Control>())
+            Hover.Tip(replaceBox, Menus.Text("SPIRE_MOD_MANAGER.IMPORT_REPLACE_TIP"));
+        column.AddChild(replaceRow);
+        column.MoveChild(replaceRow, box.GetIndex() + 1);
         // The preview follows each subscription and each mod the game finds (it leaves Not installed), until it closes.
         Subscriptions.Changed += Update;
         SpireModManager.Installed.Added += Update;
@@ -401,7 +444,7 @@ static class ProfileShare
             }
             var name = Profiles.ImportName(file);
             Close();
-            Profiles.Import(name, Profiles.PlanImport(ok.Mods), screen);
+            Profiles.Import(name, Profiles.PlanImport(ok.Mods, Replace), screen);
         }, "CreateProfileButton");
         column.AddChild(buttons);
         box.GrabFocus();
@@ -409,7 +452,8 @@ static class ProfileShare
 
 #if DEVTOOLS
     // Self-test: the preview's BBCode for a list read.
-    public static string PreviewFor(IReadOnlyList<ProfileCsv.Entry> listed, string name) => Preview(listed, Profiles.PlanImport(listed), name);
+    public static string PreviewFor(IReadOnlyList<ProfileCsv.Entry> listed, string name, ImportChoice? replace = null) =>
+        Preview(listed, Profiles.PlanImport(listed, replace), name);
 #endif
 
     // The preview: the new profile's name, what the list holds, what it changes compared with now (only the counts that
