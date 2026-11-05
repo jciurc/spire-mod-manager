@@ -488,7 +488,7 @@ static class Profiles
                     value.Length > 0 && (string.IsNullOrEmpty(mine) || replaces == true) && value != mine ? value : null;
                 var mineTags = info?.Tags ?? [];
                 var newTags = tags != null && (mineTags.Count == 0 || replace?.Tags == true)
-                    && !(mineTags.Count == tags.Count && tags.All(t => mineTags.Contains(t, StringComparer.OrdinalIgnoreCase))) ? tags : null;
+                    && !new HashSet<string>(mineTags, StringComparer.OrdinalIgnoreCase).SetEquals(tags) ? tags : null;
                 var (newAlias, newNotes) = (Taken(alias, info?.Alias, replace?.Alias), Taken(notes, info?.Notes, replace?.Notes));
                 if (newAlias != null || newNotes != null || newTags != null)
                     named.Add((key, newAlias, newNotes, newTags));
