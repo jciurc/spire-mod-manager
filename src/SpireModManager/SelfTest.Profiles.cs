@@ -924,12 +924,12 @@ static partial class SelfTest
             Dialog() != null && records.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header(new())) == true && ids.Count == installed.Count(Copies.Ticked)
             && ids.Take(enabledOrder.Count).SequenceEqual(enabledOrder) && records.Skip(1).All(r => r[3] == "TRUE") && !ids.Contains("SmmTestRetired")
             && Part<RichTextLabel>("Body")?.GetParsedText().Contains(startName) == true, $"{string.Join(" | ", ids)} vs order {string.Join(" | ", enabledOrder)}");
-        var tops = new[] { "IncludeCategory", "IncludeDisabled", "IncludeAlias", "IncludeNotes", "RememberChoices" }
+        var tops = new[] { "IncludeCategory", "IncludeDisabled", "IncludeAlias", "IncludeTags", "IncludeNotes", "RememberChoices" }
             .Select(n => Part<Button>(n)?.GetGlobalRect().Position.Y ?? -1).ToList();
-        Check("the five tick boxes on one line, Remember selection last", tops.All(y => y >= 0 && Math.Abs(y - tops[0]) < 1)
+        Check("the six tick boxes on one line, Remember selection last", tops.All(y => y >= 0 && Math.Abs(y - tops[0]) < 1)
             && Part<Button>("RememberChoices")?.GetGlobalRect().Position.X > Part<Button>("IncludeNotes")?.GetGlobalRect().End.X, string.Join(", ", tops));
-        Check("its tick boxes: Include category on; disabled, alias and notes off",
-            Ticked("IncludeCategory") && !Ticked("IncludeDisabled") && !Ticked("IncludeAlias") && !Ticked("IncludeNotes"));
+        Check("its tick boxes: Include category on; disabled, alias, tags and notes off",
+            Ticked("IncludeCategory") && !Ticked("IncludeDisabled") && !Ticked("IncludeAlias") && !Ticked("IncludeTags") && !Ticked("IncludeNotes"));
         Check("its tick boxes as heavy as their words: a thicker rim, the ✓ outlined in its own gold and raised off the bottom rim",
             Part<Button>("IncludeCategory")?.GetNodeOrNull<Panel>("Box") is { } tickBox
             && tickBox.GetThemeStylebox("panel") is StyleBoxFlat rim
@@ -942,13 +942,17 @@ static partial class SelfTest
             && !csv.Contains(alias) && !csv.Contains(notes) && records.All(r => r.Count == 6), csv);
         await Capture(screen, outDir, "7c-share-profile");
         await Tick("IncludeAlias", true);
+        await Tick("IncludeTags", true);
         await Tick("IncludeNotes", true);
         await Tick("IncludeCategory", false);
         var more = ProfileCsv.Records(Csv());
-        Check("Include alias and notes add their columns with the player's words; without the category, no Category column",
-            more.FirstOrDefault()?.SequenceEqual(ProfileCsv.Header(new(Category: false, Alias: true, Notes: true))) == true
-            && more.FirstOrDefault(r => r[0] == ModEntry.ModId) is [.., var hasAlias, var hasNotes] && hasAlias == alias && hasNotes == notes, Csv());
+        var ownTags = string.Join(", ", Store.InfoFor(ModEntry.ModId)?.Tags ?? []);
+        Check("Include alias, tags and notes add their columns with the player's words (tags with \", \" between); without the category, no Category column",
+            more.FirstOrDefault()?.SequenceEqual(["Mod Id", "Name", "Version", "Enabled", "Workshop Id", "Alias", "Tags", "Note"]) == true
+            && more.FirstOrDefault(r => r[0] == ModEntry.ModId) is [.., var hasAlias, var hasTags, var hasNotes] && hasAlias == alias && hasTags == ownTags
+            && hasNotes == notes, Csv());
         await Tick("IncludeAlias", false);
+        await Tick("IncludeTags", false);
         await Tick("IncludeNotes", false);
         await Tick("IncludeCategory", true);
         await Tick("IncludeDisabled", true);
@@ -1087,7 +1091,7 @@ static partial class SelfTest
             plan.Extras.Sorted.OrderBy(s => s.Key).SequenceEqual(new[] { ("SmmTestGoneOff", "Content, mostly"), ("SmmTestNotHere", "Content, mostly") }
                 .Concat(libSorted ? [("SmmTestLib", "Frameworks")] : []).OrderBy(s => s.Item1))
             && plan.Extras.NewCategories.SequenceEqual(toMake) && plan.Extras.Details == 2
-            && plan.Extras.Named is [("SmmTestNotHere", "=cool", "Line one\nline two")],
+            && plan.Extras.Named is [("SmmTestNotHere", "=cool", "Line one\nline two", null)],
             $"{string.Join(", ", plan.Extras.Sorted)}; new {string.Join(", ", plan.Extras.NewCategories)}; named {string.Join(", ", plan.Extras.Named)}");
         // A category the player has, named in another case, is that one; an alias or notes a mod already has stay.
         var existing = Store.Data.Categories.FirstOrDefault()?.Name;
@@ -1098,6 +1102,25 @@ static partial class SelfTest
             existing == null || (byCase.Sorted is [("SmmTestNotHere", var into)] && into == existing && byCase.NewCategories.Count == 0)
             && byCase.Named.Where(n => n.Key == "SmmTestLib").All(n => (n.Alias != null) == string.IsNullOrEmpty(libInfo?.Alias) && (n.Notes != null) == string.IsNullOrEmpty(libInfo?.Notes)),
             $"{existing}: {string.Join(", ", byCase.Sorted)}; new {string.Join(", ", byCase.NewCategories)}; named {string.Join(", ", byCase.Named)}");
+        // Tags: a Tags column reads as the player's tags (blanks and repeats dropped), filled in only where a mod has none.
+        var tagged = ProfileCsv.Read("Mod Id,Enabled,Tags\nSmmTestLib,TRUE,\"co-op,  qol, Co-op,\"\n").Mods;
+        var libTags = libInfo?.Tags ?? [];
+        var tagFill = Profiles.PlanImport(tagged).Extras.Named.Where(n => n.Key == "SmmTestLib").ToList();
+        Check("a Tags column reads as tags (\", \" between, blanks and repeats dropped); unticked, an import fills them in only where a mod has none",
+            tagged is [{ Tags: "co-op, qol" }] && (libTags.Count > 0 ? tagFill.Count == 0 : tagFill is [(_, null, null, ["co-op", "qol"])]),
+            $"{string.Join(" | ", tagged.Select(e => e.Tags))}; own {string.Join(", ", libTags)}; named {string.Join(", ", tagFill.Select(n => string.Join("/", n.Tags ?? [])))}");
+        // Replace ticked: the list's value takes the place of the mod's own; a blank in the list leaves it; a value the mod
+        // has already isn't a change.
+        var libOwnCategory = libInfo?.Category is { } libCat && Categories.Find(libCat) != null ? libCat : "";
+        var swap = new ImportChoice(true, true, true, true);
+        var replaced = Profiles.PlanImport([new("SmmTestLib", true, "", "", "Swapped in", "New alias", "New notes", "fresh")], swap).Extras;
+        var blanks = Profiles.PlanImport([new("SmmTestLib", true, "", "", "", "", "", "")], swap).Extras;
+        var sameAgain = Profiles.PlanImport([new("SmmTestLib", true, "", "", libOwnCategory, libInfo?.Alias ?? "", libInfo?.Notes ?? "", string.Join(", ", libTags))], swap).Extras;
+        Check("Replace ticked: the list's category (made if new), alias, tags and notes take the place of the mod's own; a blank leaves it; what it has already is no change",
+            replaced.Sorted.Contains(("SmmTestLib", "Swapped in")) && replaced.NewCategories.Contains("Swapped in")
+            && replaced.Named.SingleOrDefault(n => n.Key == "SmmTestLib") is (_, "New alias", "New notes", ["fresh"])
+            && blanks.Sorted.Count == 0 && blanks.Named.Count == 0 && sameAgain.Sorted.Count == 0 && sameAgain.Named.Count == 0,
+            $"replaced {string.Join(", ", replaced.Sorted)} / {string.Join(", ", replaced.Named)}; blanks {blanks.Named.Count}; same {string.Join(", ", sameAgain.Sorted)} / {sameAgain.Named.Count}");
         // A mod installed once (the local test mod) listed twice, a Workshop copy first: its one copy takes every row of its
         // id, on as one of them is; nothing is missing, though the list links a Workshop item it doesn't have (an import
         // never offers a second copy of a mod the player has).
@@ -1145,10 +1168,43 @@ static partial class SelfTest
                 + (wantOn == 0 && wantOff == 0 ? "" : Changes(wantOn, wantOff) + "\n") + "  •  " + SortedLine(plan.Extras.Sorted.Count))
             && !Preview().Contains("already set") && !Preview().Contains("aren't in the list") && !Preview().Contains("isn't in the list"),
             $"on {plan.On}/{wantOn}, off {plan.Off}/{wantOff}, same {plan.Same}, unlisted {plan.Unlisted}/{others}: {Preview()}");
-        Check("the preview counts what else the list does: mods sorted into categories, new categories, aliases and notes added; no None then",
+        Check("the preview counts what else the list does: mods sorted into categories, new categories, aliases, tags and notes set; no None then",
             Preview().Contains(SortedLine(plan.Extras.Sorted.Count) + "\n")
             && (plan.Extras.NewCategories.Count == 0 ? !Preview().Contains("New categories") : Preview().Contains($"New categories {plan.Extras.NewCategories.Count}\n"))
-            && Preview().Contains("Aliases and notes added 2\n") && !Preview().Contains("  •  None"), Preview());
+            && Preview().Contains("Aliases, tags and notes set 2\n") && !Preview().Contains("  •  None"), Preview());
+        // The Replace boxes: one row between the text and the preview, all off at first, Remember selection last; each tick
+        // plans the import again (the list's alias for Test Framework, which has its own, counts only while Replace alias is on).
+        var replaceNames = new[] { "ReplaceCategory", "ReplaceAlias", "ReplaceTags", "ReplaceNotes", "RememberReplace" };
+        var replaceTops = replaceNames.Select(n => Part<Button>(n)?.GetGlobalRect().Position.Y ?? -1).ToList();
+        var (textBottom, previewTop) = (Part<Control>("CsvText")?.GetGlobalRect().End.Y ?? -1, Part<Control>("Preview")?.GetGlobalRect().Position.Y ?? -1);
+        Check("Import's Replace boxes: on one line between the text and the preview, all off, Remember selection last",
+            replaceTops.All(y => y >= textBottom && y < previewTop && Math.Abs(y - replaceTops[0]) < 1) && replaceNames.All(n => !Ticked(n))
+            && Part<Button>("RememberReplace")?.GetGlobalRect().Position.X > Part<Button>("ReplaceNotes")?.GetGlobalRect().End.X,
+            $"{string.Join(", ", replaceTops)}; text to {textBottom}, preview from {previewTop}");
+        var libAlias = Store.InfoFor("SmmTestLib")?.Alias;
+        var aliasList = "Mod Id,Enabled,Alias\nSmmTestLib,TRUE,Swapped alias\n";
+        await Paste(aliasList);
+        var unticked = Preview();
+        await Tick("ReplaceAlias", true);
+        var ticked = Preview();
+        Check("ticking Replace alias plans the import again: the list's alias for a mod that has one counts only then",
+            unticked.Contains("Aliases, tags and notes set 1") == string.IsNullOrEmpty(libAlias) && ticked.Contains("Aliases, tags and notes set 1"),
+            $"{libAlias}: {unticked} || {ticked}");
+        await Tick("RememberReplace", true);
+        var keptReplace = Store.Data.ImportChoices;
+        await Tick("RememberReplace", false);
+        Check("its Remember selection keeps the Replace boxes in our data, and forgets them when off",
+            keptReplace == new ImportChoice(false, true, false, false) && Store.Data.ImportChoices == null, $"{keptReplace}");
+        Press("CreateProfileButton");
+        await Wait(menu, 0.3);
+        var swapped = Store.InfoFor("SmmTestLib")?.Alias;
+        History.Undo();
+        await Wait(menu, 0.3);
+        Check("Create profile with Replace alias: the list's alias takes the place of the mod's own, and undo puts it back",
+            swapped == "Swapped alias" && Store.InfoFor("SmmTestLib")?.Alias == libAlias && Profiles.Active?.Name == otherName, $"{libAlias} -> {swapped} -> {Store.InfoFor("SmmTestLib")?.Alias}");
+        ProfileShare.ForgetSessionChoices(); // the boxes back as a launch finds them
+        await Choose("Import profile");
+        await Paste(bmm);
         var onlyOn = ProfileShare.PreviewFor(ProfileCsv.Read("Mod Id,Enabled\nSmmTestLib,\nSmmTestUi,TRUE\n").Mods, "Only on");
         Check("a list with nothing disabled says just its enabled mods; a blank Enabled reads as enabled", onlyOn.Contains("Contains 2 enabled mods")
             && !onlyOn.Contains("disabled mods"), onlyOn);
