@@ -1075,7 +1075,8 @@ static partial class SelfTest
         await Wait(menu, 0.3);
         Check("the notice is shown once", NModalContainer.Instance?.OpenModal == null, NModalContainer.Instance?.OpenModal?.GetType().Name ?? "");
 
-        // Restore, to the list as it is but reversed, Test Fixes, Test Addon (it can't load) and ours off, and Test UI
+        // Restore, to the list as it is but reversed, Test Fixes, Test Addon (it can't load), Test Twin User (reversed, Test
+        // Twin's copy that loads is A, below the 1.1.0 it needs: Dependencies.Old) and ours off, and Test UI
         // missing (installed since). Then again with Test Framework missing too, which Test Content (on) needs.
         var settings = SaveManager.Instance.SettingsSave.ModSettings;
         var listWas = settings?.ModList.Select(e => new SettingsSaveMod { Id = e.Id, Source = e.Source, IsEnabled = e.IsEnabled }).ToList() ?? [];
@@ -1084,7 +1085,7 @@ static partial class SelfTest
         try
         {
             var target = History.CurrentMods().Where(m => m.Id != "SmmTestUi").Reverse()
-                .Select(m => new LaunchGuard.Entry(m.Id, m.Source, m.Enabled && m.Id is not ("SmmTestFixes" or "SmmTestAddon" or ModEntry.ModId), null)).ToList();
+                .Select(m => new LaunchGuard.Entry(m.Id, m.Source, m.Enabled && m.Id is not ("SmmTestFixes" or "SmmTestAddon" or "SmmTestTwinUser" or ModEntry.ModId), null)).ToList();
             LaunchGuard.Restore(target, menu);
             await Wait(menu, 0.3);
             var after = string.Join(", ", History.CurrentMods().Select(m => $"{m.Id}={m.Enabled}"));
@@ -1092,7 +1093,9 @@ static partial class SelfTest
             var expected = string.Join(", ", target.OrderBy(m => m.Id == ModEntry.ModId ? 0 : 1).Select(m => $"{m.Id}={m.Enabled || m.Id == ModEntry.ModId}")
                 .Concat(Enumerable.Repeat("SmmTestUi=False", Dependencies.Find("SmmTestUi") != null ? 1 : 0)));
             Check("Restore: the working list back in its order (ours first), a mod added since off, ours on, then a relaunch",
-                relaunches == 1 && !RelaunchCheck.IsOpen && after == expected, $"{relaunches} relaunches; {after}; expected {expected}");
+                relaunches == 1 && !RelaunchCheck.IsOpen && after == expected, $"{relaunches} relaunches; {after}; expected {expected}; problems "
+                + string.Join(" | ", Dependencies.EachCopy(ModManager.Mods.Union(Installed.Mods)).SelectMany(m => ModDetails.DependencyProblems(m)
+                    .Select(p => $"{m.manifest?.id} {m.manifest?.version}: {p}"))) + $"; twin loads {Dependencies.Find("SmmTestTwin")?.manifest?.version}");
             RelaunchCheck.Close();
 
             if (Dependencies.Find("SmmTestLib") == null || !target.Any(m => m.Id == "SmmTestContent" && m.Enabled))

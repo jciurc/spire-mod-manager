@@ -380,6 +380,7 @@ static class RowStrip
                 Dependencies.Problem.Missing => (Menus.Text("SPIRE_MOD_MANAGER.DEP_MISSING"), ProblemHex),
                 Dependencies.Problem.Off when TurnedOff.Has(id) => (Menus.Text("SPIRE_MOD_MANAGER.DEP_TURNED_OFF"), ProblemHex),
                 Dependencies.Problem.Off => (Menus.Text("SPIRE_MOD_MANAGER.DEP_OFF"), ProblemHex),
+                Dependencies.Problem.Old => (Menus.Format("SPIRE_MOD_MANAGER.DEP_OLD", ("version", Dependencies.MinOf(mod, id) ?? "")), ProblemHex),
                 Dependencies.Problem.LoadsBefore => (Menus.Text("SPIRE_MOD_MANAGER.DEP_AFTER"), ProblemHex),
                 _ when loadOrder && on => (Menus.Text("SPIRE_MOD_MANAGER.DEP_BEFORE"), FineHex),
                 // A mod that won't load: no problems to report yet, but each dependency still shows whether it loads.
