@@ -1045,7 +1045,7 @@ static partial class SelfTest
 
     // Each hidden tag against the list's rows, by what it means told from what the page shows or from where the search's
     // decisions say it comes from, not by HiddenTags' own rules: the row's box (#enabled), its chips (#local, #new,
-    // #duplicate), its category as the list files it; a dependency missing or off by Dependencies.Check (#unmet), NeededOff,
+    // #duplicate), its category as the list files it; a dependency missing, off or too old by Dependencies.Check (#unmet), NeededOff,
     // OrderViolations, Copies.Clashing and Loses, the managers both ticked, TurnedOff.StillOff, what changed since launch
     // (ChangedMods, Moves, the edited keys). Wrong: each tag that finds other rows than it means, with them; Found: how many each finds.
     static (List<string> Wrong, string Found) HiddenTagsAsMeant(Control content)
@@ -1056,7 +1056,7 @@ static partial class SelfTest
         bool Chip(Mod mod, string key) => Tags.For(mod).Any(c => !c.Custom && c.Text == Menus.Text(key));
         var order = new Dictionary<Mod, int>(); // missing or off: the order doesn't matter
         bool Unmet(Mod mod) => Copies.Loads(mod)
-            && Dependencies.Of(mod).Any(id => Dependencies.Check(mod, id, order) is Dependencies.Problem.Missing or Dependencies.Problem.Off);
+            && Dependencies.Of(mod).Any(id => Dependencies.Check(mod, id, order) is Dependencies.Problem.Missing or Dependencies.Problem.Off or Dependencies.Problem.Old);
         var neededOff = Dependencies.NeededOff(mods).ToHashSet();
         bool Needed(Mod mod) => !Copies.Loads(mod) && neededOff.Contains(mod);
         var misordered = Dependencies.OrderViolations(LoadOrder.Mods(rows)).Select(v => v.Mod).ToHashSet();
