@@ -3,6 +3,13 @@
 What changed in each Workshop release, for players. Each version's first line is its Workshop change note
 (`changeNote` in `workshop/workshop.json`), word for word.
 
+## 0.2.3 (2026-11-24)
+
+0.2.3:
+- Import can now selectively replace categories, aliases, tags or notes
+- an uninstalled dependency now shows a link to its workshop page
+- added flag for outdated dependency
+
 ## 0.2.2 (2026-11-04)
 
 0.2.2:
