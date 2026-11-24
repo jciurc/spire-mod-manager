@@ -42,6 +42,24 @@ static partial class SelfTest
         });
         Check("a mod needing several of a kind: one line naming them all, in the plural",
             several.SequenceEqual(["Requires mods to be installed: SmmGoneA, SmmGoneB", "Requires mod to be enabled: Test Framework"]), string.Join(" | ", several));
+        // A dependency below the version a mod needs, as the game reads both (it fails the mod: DEPENDENCY_VERSION_UNSUPPORTED,
+        // or _INVALID for a version it can't read), here this mod, which always loads: a problem line, the row's word, the
+        // banner's mods (Unmet). At or below its own version: none.
+        Mod Needing(string id, string min) => new()
+        {
+            path = "", modSource = ModSource.ModsDirectory,
+            manifest = new ModManifest { id = id, name = id, dependencies = [new(ModEntry.ModId, min)] },
+        };
+        var ours = Dependencies.Find(ModEntry.ModId)?.manifest?.name ?? ModEntry.ModId;
+        var (tooOld, unread, fine) = (Needing("SmmOldTest", "99.0.0"), Needing("SmmUnreadTest", "2.6"), Needing("SmmFineTest", "0.0.1"));
+        var oldLines = ModDetails.DependencyProblems(tooOld);
+        var oldRow = RowStrip.Needs(tooOld, new Dictionary<Mod, int>(), loadOrder: false);
+        Check("a dependency below the version a mod needs: \"Requires a newer mod version: Spire Mod Manager 99.0.0 or newer\", the row's "
+            + "\"(99.0.0 or newer)\", among the banner's mods; one whose minimum the game can't read too; one it meets, none",
+            oldLines.SequenceEqual([$"Requires a newer mod version: {ours} 99.0.0 or newer"]) && oldRow.Contains("(99.0.0 or newer)") && Dependencies.Unmet(tooOld)
+            && Dependencies.Unmet(unread) && ModDetails.DependencyProblems(fine).Count == 0 && !Dependencies.Unmet(fine)
+            && !RowStrip.Needs(fine, new Dictionary<Mod, int>(), loadOrder: false).Contains("or newer"),
+            $"{string.Join(" | ", oldLines)} / {oldRow} / unread {Dependencies.Unmet(unread)}, fine {string.Join(" | ", ModDetails.DependencyProblems(fine))}");
         // Cancel first, at the row's left; the fixes and Relaunch anyway at its right.
         var row = Dialog()?.FindChild("Buttons", true, false) as Control;
         var rowButtons = row?.GetChildren().OfType<Button>().ToList() ?? [];
@@ -839,10 +857,37 @@ static partial class SelfTest
                 .FirstOrDefault(l => l.StartsWith(Menus.Text("SPIRE_MOD_MANAGER.NEEDED_BY") + ": ")) ?? "";
             Check("the required mod's panel: Required for: Workshop Test (Requirement from workshop)",
                 forLine == $"{Menus.Text("SPIRE_MOD_MANAGER.NEEDED_BY")}: Workshop Test (Requirement from workshop)", forLine);
+
+            // Dependencies that aren't installed (notes#31): "(not installed)" after each; one whose id is a required
+            // item's title (ignoring case, spaces and punctuation) opens that item's page and isn't listed again as a
+            // requirement; one with none opens the Workshop's search for its id, escaped. Their tips say which.
+            WorkshopInfo.TestSet(42, new WorkshopInfo.Details(DateTime.Now, DateTime.Now, [], [], 0, null) { Required = [43, 99001, 99002] });
+            WorkshopInfo.TestTitle(99002, "Smm Missing-Lib");
+            if (mod.manifest is { } needing)
+                needing.dependencies = [new ModDependency("SmmMissingLib"), new ModDependency("Smm Nowhere&x")];
+            info.Fill(mod);
+            needs = PanelScroll.Description(info);
+            needsLine = needs.GetParsedText().Split('\n').FirstOrDefault(l => l.StartsWith(Menus.Text("SPIRE_MOD_MANAGER.DEPENDENCIES") + ": ")) ?? "";
+            var search = ModDetails.WorkshopSearch + "Smm%20Nowhere%26x";
+            Check("dependencies not installed: each \"(not installed)\"; the one titled on the Workshop its page, not listed again; the other "
+                + "the Workshop's search for its id, escaped",
+                needsLine == "Dependencies: SmmMissingLib (not installed), Smm Nowhere&x (not installed), Workshop Lib (Requirement from workshop), "
+                    + "Missing Lib (Requirement from workshop)"
+                && needs.Text.Contains($"[url={ProfileCsv.WorkshopLink(99002)}]") && needs.Text.Contains($"[url={search}]")
+                && !needs.Text.Contains("[url=mod:SmmMissingLib]"), $"{needsLine} / {needs.Text}");
+            Check("their tips: the Workshop page, the search",
+                ModDetails.MissingTip(ProfileCsv.WorkshopLink(99002)) == Menus.Text("SPIRE_MOD_MANAGER.MISSING_PAGE_TIP")
+                && ModDetails.MissingTip(search) == Menus.Text("SPIRE_MOD_MANAGER.MISSING_SEARCH_TIP") && ModDetails.MissingTip("mod:SmmMissingLib") == null);
+            Check("a required item with another title isn't the dependency, even when it's the only one not installed",
+                ModDetails.DependencyItem("SmmOtherLib", [(99001, null)]) == null && ModDetails.DependencyItem("missing_lib", [(99001, null)]) == 99001
+                && ModDetails.DependencyItem("SmmWorkshopLib", [(43, "SmmWorkshopLib")]) == null);
         }
         finally
         {
+            if (mod.manifest is { } needing)
+                needing.dependencies = null;
             WorkshopInfo.TestTitle(99001, null);
+            WorkshopInfo.TestTitle(99002, null);
             Installed.Forget(lib);
         }
         WorkshopInfo.TestSet(42, null);

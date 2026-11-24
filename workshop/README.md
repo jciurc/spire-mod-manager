@@ -62,8 +62,9 @@ every upload, so keep them right here and check the page afterwards.
    `mod-uploader.log` there), run the line `prepare.cs` printed. It has the full path of your checkout's
    `workshop` folder: `.\ModUploader.exe upload -w "<your checkout>\workshop"`
 7. First upload only: commit the new `mod_id.txt`.
-8. On the item's Change Notes page, check that the branch range reads what `minBranch` says (every branch, or
-   public-beta and up). If it doesn't, fix it on the page and here.
+8. On the item's page, check the branch range against `minBranch`. Steam shows a branch line only when the item is
+   limited to some branches: with `minBranch` null there's none, and with `"public-beta"` it should name
+   public-beta and up. If it doesn't match, fix it on the page and here.
 
 ## The first upload: private, then test
 

@@ -585,14 +585,16 @@ static class LoadOrder
         var failed = FailedToLoad(mods, broken);
         if (broken.Count == 0 && failed.Count == 0)
             return;
-        var needOff = broken.Count(b => b.Needs.Any(d => d.Dep != null));
+        var needOff = broken.Count(b => b.Needs.Any(d => d.Dep is { } dep && !Copies.Loads(dep)));
         var needMissing = broken.Count(b => b.Needs.Any(d => d.Dep == null));
+        var needOld = broken.Count(b => b.Needs.Any(d => d.Dep is { } dep && Copies.Loads(dep)));
         string Part(string key, int count) => Menus.Format(count == 1 ? key + "_ONE" : key, ("count", Menus.Number(count)));
         // Each a statement of its own, with no full stop (Jordan's rule), so a dot between them when two or more show.
         var text = string.Join("  ·  ", new[]
         {
             needOff > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_OFF", needOff) : null,
             needMissing > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_MISSING", needMissing) : null,
+            needOld > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_OLD", needOld) : null,
             failed.Count > 0 ? Part("SPIRE_MOD_MANAGER.LIST_PROBLEMS_FAILED", failed.Count) : null,
         }.OfType<string>());
 
@@ -625,12 +627,12 @@ static class LoadOrder
         Banner(border, search, text, () => NeedsCard(content), buttons);
     }
 
-    // Enabled mods that won't load, each with what it needs that's disabled (Dep) or not installed (Dep null); the ones
-    // needing a disabled mod first.
+    // Enabled mods that won't load, each with what it needs that's disabled or too old (Dep: Dependencies.Old, the one that
+    // loads) or not installed (Dep null); the ones needing an installed mod first.
     static List<(Mod Mod, List<(string Id, Mod? Dep)> Needs)> Unloadable(IEnumerable<Mod> mods) =>
         mods.Where(Copies.Loads)
             .Select(m => (Mod: m, Needs: Dependencies.Of(m).Distinct().Select(id => (Id: id, Dep: Dependencies.Find(id)))
-                .Where(d => d.Dep == null || !Copies.Loads(d.Dep)).ToList()))
+                .Where(d => d.Dep == null || !Copies.Loads(d.Dep) || Dependencies.Old(m, d.Dep)).ToList()))
             .Where(b => b.Needs.Count > 0)
             .OrderBy(b => b.Needs.All(d => d.Dep == null)) // stable: each group keeps its order
             .ToList();
@@ -798,13 +800,14 @@ static class LoadOrder
     static string? NeedsCard(Control content)
     {
         using var lookups = Lookups.Begin();
-        string Need((string Id, Mod? Dep) need) => need.Dep is not { } dep ? Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS_MISSING", ("mod", need.Id))
+        string Need(Mod mod, (string Id, Mod? Dep) need) => need.Dep is not { } dep ? Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS_MISSING", ("mod", need.Id))
+            : Copies.Loads(dep) ? $"{Shown(dep)} {Menus.Format("SPIRE_MOD_MANAGER.DEP_OLD", ("version", Dependencies.MinOf(mod, need.Id) ?? ""))}"
             : TurnedOff.Has(need.Id) ? Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS_TURNED_OFF", ("mod", Shown(dep)))
             : Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS_OFF", ("mod", Shown(dep)));
         var mods = Mods(content.GetChildren().OfType<NModMenuRow>());
         var broken = Unloadable(mods);
         return BannerCard("SPIRE_MOD_MANAGER.BANNER_CARD_TITLE", [.. broken
-            .Select(b => Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS", ("mod", Shown(b.Mod)), ("needs", string.Join(", ", b.Needs.Select(Need))))),
+            .Select(b => Menus.Format("SPIRE_MOD_MANAGER.BANNER_NEEDS", ("mod", Shown(b.Mod)), ("needs", string.Join(", ", b.Needs.Select(n => Need(b.Mod, n)))))),
             .. FailedToLoad(mods, broken).Select(m => Menus.Format("SPIRE_MOD_MANAGER.BANNER_FAILED", ("mod", Shown(m))))]);
     }
 
